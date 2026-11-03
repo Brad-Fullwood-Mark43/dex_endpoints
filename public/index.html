@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Commsys Mock - Call Log</title>
+<style>
+  :root {
+    --canvas: #f1f5f9; --bg: #f8fafc; --card: #ffffff; --accent: #e2e8f0; --stroke: #e2e8f0;
+    --text: #1a202c; --muted: #64748b; --faint: #94a3b8; --blue: #4299e1; --code-bg: #f1f5f9;
+    --red: #dc2626; --red-bg: #fee2e2; --amber: #b45309; --amber-bg: #fef3c7;
+    --green: #059669; --green-bg: #d1fae5; --blue-bg: #dbeafe; --blue-text: #1e40af; --grey-bg: #e5e7eb; --grey-text: #374151;
+    --shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #0a0e1a; --bg: #0f172a; --card: #1a2332; --accent: #293548; --stroke: #293548;
+      --text: #e2e8f0; --muted: #94a3b8; --faint: #64748b; --code-bg: #0f172a;
+      --red-bg: #7f1d1d; --amber: #fde68a; --amber-bg: #78350f; --green: #6ee7b7; --green-bg: #065f46;
+      --blue-bg: #1e3a8a; --blue-text: #bfdbfe; --grey-bg: #334155; --grey-text: #cbd5e1;
+      --shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--stroke); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .eyebrow { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; opacity: .6; margin-bottom: 2px; }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  main { padding: 16px 24px 64px; max-width: 1500px; margin: 0 auto; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
+  .p-green { background: var(--green-bg); color: var(--green); } .p-red { background: var(--red-bg); color: var(--red); }
+  .p-amber { background: var(--amber-bg); color: var(--amber); } .p-blue { background: var(--blue-bg); color: var(--blue-text); }
+  .p-grey { background: var(--grey-bg); color: var(--grey-text); }
+  @media (prefers-color-scheme: dark) { .p-red { color: #fecaca; } }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+  button.danger { color: var(--red); } button:disabled { opacity: .5; cursor: not-allowed; }
+  input, select, textarea { background: var(--card); border: 1px solid var(--stroke); border-radius: 6px; padding: 6px 8px; width: 100%; }
+  textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .banner { padding: 8px 14px; border-radius: 8px; margin-bottom: 12px; background: var(--amber-bg); color: var(--amber); font-size: 13px; }
+  .stats { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 110px; background: var(--card); border-radius: 8px; padding: 12px 8px; text-align: center; cursor: pointer; box-shadow: var(--shadow); outline: 2px solid transparent; outline-offset: -2px; transition: outline .15s; }
+  .stat.active { outline-color: var(--c); } .stat b { display: block; font-size: 28px; font-weight: 600; line-height: 1.2; color: var(--c); } .stat span { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--stroke); margin-bottom: 16px; }
+  .tab { border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 8px 16px; color: var(--muted); font-weight: 600; }
+  .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  .call { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); border-left: 4px solid var(--c, var(--faint)); margin-bottom: 10px; overflow: hidden; }
+  .call-head { display: flex; gap: 10px; align-items: center; padding: 12px 16px; cursor: pointer; flex-wrap: wrap; }
+  .call-head .time { color: var(--muted); font-size: 12px; min-width: 70px; font-variant-numeric: tabular-nums; }
+  .call-head .q { font-weight: 600; flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+  .call-head .chev { color: var(--faint); transition: transform .15s; } .call.open .chev { transform: rotate(90deg); }
+  .call-body { display: none; border-top: 1px solid var(--stroke); padding: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 20px; }
+  .call.open .call-body { display: grid; }
+  @media (max-width: 1000px) { .call.open .call-body { grid-template-columns: minmax(0, 1fr); } }
+  h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  h4 { margin: 14px 0 6px; font-size: 13px; }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 13px; } table.kv td { padding: 3px 8px 3px 0; vertical-align: top; border-bottom: 1px solid var(--stroke); }
+  table.kv td:first-child { color: var(--muted); width: 38%; white-space: nowrap; } table.kv td:last-child { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+  pre { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 10px 12px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; overflow: auto; max-height: 360px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .result { border: 1px solid var(--stroke); border-radius: 10px; padding: 12px; margin-bottom: 10px; border-left: 4px solid var(--c, var(--faint)); }
+  .result-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .raw-toggle { font-size: 12px; margin-top: 8px; padding: 2px 10px; }
+  .hide { display: none; } .muted { color: var(--muted); } .row { display: flex; gap: 12px; flex-wrap: wrap; } .row > * { flex: 1; min-width: 160px; }
+  .panel { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+  .rec { display: flex; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--stroke); cursor: pointer; } .rec:hover { background: var(--accent); } .rec .n { flex: 1; font-weight: 600; }
+  .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+  code.inline { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="eyebrow">Universal Search testing</div>
+    <h1>Commsys Mock <span id="live" class="pill p-grey">CONNECTING</span> <span class="pill p-amber">SYNTHETIC DATA ONLY</span></h1>
+    <div class="sub">Every call a tenant (or you) makes, what was sent, and the formatted response.</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center"><span class="muted" id="updated"></span><button id="clear">Clear log</button></div>
+</header>
+<main>
+  <div id="banners"></div>
+  <div class="stats" id="stats"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="log">Call log</button>
+    <button class="tab" data-tab="send">Send test query</button>
+    <button class="tab" data-tab="records">Records</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+  <section id="tab-log"><div id="calls"></div></section>
+  <section id="tab-send" class="hide"></section>
+  <section id="tab-records" class="hide"></section>
+  <section id="tab-settings" class="hide"></section>
+</main>
+
+<script>
+const S = { settings: {}, records: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (method, url, body) => {
+  const res = await fetch(url, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw new Error(`${method} ${url} -> ${res.status}`);
+  return res.json();
+};
+
+function prettyXml(xml) {
+  if (!xml) return '';
+  const s = xml.replace(/>\s+</g, '><').trim();
+  let depth = 0;
+  return s.replace(/<[^>]+>|[^<]+/g, (tok) => {
+    if (!tok.startsWith('<')) return tok;
+    if (/^<\//.test(tok)) { depth = Math.max(0, depth - 1); return '\n' + '  '.repeat(depth) + tok; }
+    const line = '\n' + '  '.repeat(depth) + tok;
+    if (!/\/>$/.test(tok) && !/^<[?!]/.test(tok)) depth++;
+    return line;
+  }).replace(/(<[^/!?][^>]*>)\n\s*([^<\n]+)\n\s*(<\/)/g, '$1$2$3').trim();
+}
+
+function outcome(t) {
+  const hit = t.results.some((r) => r.hit);
+  const none = t.results.length && t.results.every((r) => r.class === 'NoRecord');
+  const failed = ['rejected', 'ack-failed', 'ack-timeout', 'delivery-failed'].includes(t.state);
+  if (failed) return { key: 'error', label: t.state.replace('-', ' ').toUpperCase(), color: 'var(--red)', cls: 'p-red' };
+  if (['received', 'acked', 'delivering'].includes(t.state)) return { key: 'pending', label: 'IN PROGRESS', color: 'var(--blue)', cls: 'p-blue' };
+  if (hit) return { key: 'hit', label: 'HIT', color: 'var(--red)', cls: 'p-red' };
+  if (none) return { key: 'none', label: 'NO RECORD', color: 'var(--green)', cls: 'p-green' };
+  return { key: 'ok', label: t.state === 'held' ? 'HELD (NOT SENT)' : t.state === 'no-callback' ? 'NO CALLBACK' : 'RETURNED', color: 'var(--amber)', cls: t.state === 'delivered' ? 'p-green' : 'p-amber' };
+}
+
+const FRIENDLY = { PERSON: 'Person', VEHICLE: 'Vehicle', FIREARM: 'Firearm', BOAT: 'Boat', ARTICLE: 'Article' };
+const QUERY_KEYS = ['Name', 'OperatorLicenseNumber', 'LicensePlateNumber', 'VehicleIdentificationNumber', 'GunSerialNumber', 'BoatHullIdNumber', 'RegistrationNumber', 'ArticleSerialNumber', 'SocialSecurityNumber', 'BirthDate'];
+function querySummary(t) {
+  if (!t.queries.length) return 'Unparseable request';
+  return t.queries.map((q) => {
+    const bits = QUERY_KEYS.filter((k) => q.fields[k]).map((k) => q.fields[k]);
+    return `${FRIENDLY[q.entityType] || q.messageType || 'Query'}: ${bits.join(' / ') || '(no identifiers)'}`;
+  }).join('  |  ');
+}
+
+function kvTable(obj) {
+  const rows = Object.entries(obj || {}).filter(([, v]) => v !== '' && v != null);
+  return rows.length ? `<table class="kv">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>` : '<div class="muted">none</div>';
+}
+
+function rawBlock(id, label, text) {
+  const open = S.rawOpen.has(id);
+  return `<button class="raw-toggle" data-raw="${esc(id)}">${open ? 'Hide' : 'Show'} ${esc(label)}</button><pre class="${open ? '' : 'hide'}" id="raw-${esc(id)}">${esc(prettyXml(text))}</pre>`;
+}
+
+function renderSent(t) {
+  const q = t.queries[0];
+  const queryFields = t.queries.map((x) => `<h4>${esc(FRIENDLY[x.entityType] || x.messageType || 'Query')} query <span class="muted">${esc(x.requestId || '')}</span></h4>${kvTable(Object.fromEntries(Object.entries(x.fields).filter(([k]) => k !== 'Id')))}`).join('');
+  return `<div>
+    <h3>What was sent</h3>
+    <div class="row" style="margin-bottom:6px"><span class="pill p-grey">${esc(t.protocol)}</span><span class="pill p-grey">POST ${esc(t.path)}</span><span class="pill p-grey">${esc(t.origin === 'ui-test' ? 'FROM THIS UI' : 'FROM TENANT')}</span></div>
+    ${queryFields}
+    ${q ? `<h4>Session / authentication</h4>${kvTable({ Device: q.auth.deviceId, 'Device alias': q.auth.deviceAlias, ORI: q.auth.ori, User: q.auth.userName, Mnemonic: q.auth.mnemonic })}` : ''}
+    <h4>HTTP headers</h4>${kvTable(t.headers)}
+    ${rawBlock(t.id + ':sent', 'raw request', t.protocol === 'SOAP' ? t.sent : (t.requestXml || t.sent))}
+  </div>`;
+}
+
+function renderResult(t, r, i) {
+  const del = t.deliveries.find((d) => d.resultIndex === i);
+  const delChip = del
+    ? del.error ? `<span class="pill p-red">DELIVERY ERROR ${esc(del.error)}</span>`
+      : `<span class="pill ${del.status >= 200 && del.status < 300 ? 'p-green' : 'p-red'}">CALLBACK HTTP ${del.status} · ${del.ms}ms</span>`
+    : '<span class="pill p-grey">NOT DELIVERED</span>';
+  const color = r.hit ? 'var(--red)' : r.class === 'NoRecord' ? 'var(--green)' : 'var(--blue)';
+  return `<div class="result" style="--c:${color}">
+    <div class="result-head"><b>${esc(r.class)}</b><span class="pill ${r.hit ? 'p-red' : 'p-green'}">${r.hit ? 'HIT' : 'NO HIT'}</span><span class="pill p-grey">${esc(r.system || '-')}</span>${delChip}<span class="muted">${esc(r.recordName)}</span></div>
+    ${kvTable(r.fields)}
+    <h4>Message data</h4><pre>${esc(r.messageData)}</pre>
+    ${rawBlock(t.id + ':res:' + i, 'result XML', r.xml)}
+    ${del && del.response ? rawBlock(t.id + ':resp:' + i, 'callback response', del.response) : ''}
+  </div>`;
+}
+
+function renderBack(t) {
+  const ack = t.ack;
+  const ackPill = !ack ? '<span class="pill p-blue">WAITING</span>' : `<span class="pill ${ack.httpStatus === 200 ? 'p-green' : 'p-red'}">HTTP ${ack.httpStatus || 'NONE'}</span>`;
+  const notes = t.deliveries.filter((d) => d.note).map((d) => `<div class="banner">${esc(d.note)}</div>`).join('');
+  return `<div>
+    <h3>What came back</h3>
+    <h4 style="margin-top:0">Acknowledgement ${ackPill}</h4>
+    ${ack ? rawBlock(t.id + ':ack', 'acknowledgement XML', ack.body) : ''}
+    <h4>Results (${t.results.length})</h4>
+    ${notes}
+    ${t.results.length ? t.results.map((r, i) => renderResult(t, r, i)).join('') : '<div class="muted">No results were generated for this call.</div>'}
+    ${['held', 'delivered', 'delivery-failed', 'no-callback'].includes(t.state) ? `<button data-redeliver="${esc(t.id)}">Re-send results to callback URL</button>` : ''}
+  </div>`;
+}
+
+function renderCall(t) {
+  const o = outcome(t);
+  const open = S.open.has(t.id);
+  const time = new Date(t.ts).toLocaleTimeString();
+  return `<div class="call ${open ? 'open' : ''}" data-id="${esc(t.id)}" style="--c:${o.color}">
+    <div class="call-head" data-toggle="${esc(t.id)}"><span class="chev">▶</span><span class="time">${esc(time)}</span><span class="pill p-grey">${esc(t.protocol)}</span><span class="q">${esc(querySummary(t))}</span><span class="pill ${o.cls}">${esc(o.label)}</span></div>
+    ${open ? `<div class="call-body">${renderSent(t)}${renderBack(t)}</div>` : ''}
+  </div>`;
+}
+
+function renderStats() {
+  const c = { all: S.txns.length, hit: 0, none: 0, error: 0, pending: 0 };
+  S.txns.forEach((t) => { const k = outcome(t).key; if (c[k] !== undefined) c[k]++; });
+  const defs = [['all', 'Calls', 'var(--blue)'], ['hit', 'Hits', 'var(--red)'], ['none', 'No record', 'var(--green)'], ['error', 'Errors', 'var(--amber)'], ['pending', 'In progress', 'var(--faint)']];
+  $('#stats').innerHTML = defs.map(([k, label, color]) => `<div class="stat ${(S.filter || 'all') === k ? 'active' : ''}" data-filter="${k}" style="--c:${color}"><b>${c[k]}</b><span>${label}</span></div>`).join('');
+}
+
+function renderCalls() {
+  renderStats();
+  const list = S.txns.filter((t) => !S.filter || S.filter === 'all' || outcome(t).key === S.filter);
+  $('#calls').innerHTML = list.length ? list.map(renderCall).join('') :
+    `<div class="empty">No calls yet.<br>Point a tenant at <code class="inline">${esc(location.origin)}/connectcic</code> or use <b>Send test query</b>.</div>`;
+  $('#updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function renderBanners() {
+  const b = [];
+  if (!S.config.apiKeySet) b.push('The Commsys endpoint is OPEN: set the API_KEY environment variable so only your tenant can call it.');
+  if (!S.config.adminPasswordSet) b.push('This web UI is OPEN: set ADMIN_PASSWORD so only you can see calls and edit records.');
+  if (!S.settings.callbackUrl) b.push('No callback URL set (Settings). Results will show here but will not be POSTed back to the interface agent.');
+  $('#banners').innerHTML = b.map((x) => `<div class="banner">${esc(x)}</div>`).join('');
+}
+
+function upsertTxn(t) {
+  const i = S.txns.findIndex((x) => x.id === t.id);
+  if (i >= 0) S.txns[i] = t; else S.txns.unshift(t);
+  if (S.pendingOpen && t.origin === 'ui-test') { S.open.add(t.id); S.pendingOpen = false; setTab('log'); }
+  renderCalls();
+}
+
+// ---- Send test query tab
+const EXTRA = { PERSON: [], VEHICLE: ['State'], FIREARM: [], BOAT: ['State'], ARTICLE: [] };
+const EXAMPLES = { PERSON: { Name: 'DOE, JANE', OperatorLicenseNumber: 'D0000001' }, VEHICLE: { LicensePlateNumber: 'TST1234' }, FIREARM: { GunSerialNumber: 'TESTGUN001' }, BOAT: { BoatHullIdNumber: 'TEST12345B606' }, ARTICLE: { ArticleSerialNumber: 'TESTART777' } };
+function renderSend() {
+  const el = $('#tab-send');
+  el.innerHTML = `<div class="panel"><div class="row">
+    <div><label>Query type</label><select id="s-type">${S.entityTypes.map((e) => `<option value="${e}">${FRIENDLY[e]}</option>`).join('')}</select></div>
+    <div><label>Protocol</label><select id="s-proto"><option>REST</option><option>SOAP</option></select></div></div>
+    <div id="s-fields" class="row" style="margin-top:10px"></div>
+    <p class="muted">Goes through the same pipeline as a tenant request, including the acknowledgement and callback. Seed records: Jane Doe (license only), Alex Sample (license plus wanted hit), Casey Example (missing person), plates TST1234 and STL9999 (stolen), TESTGUN001, TEST12345B606, TESTART777.</p>
+    <button class="primary" id="s-go">Send query</button></div>`;
+  const draw = () => {
+    const type = $('#s-type').value;
+    const keys = [...(S.matchKeys[type] || []), ...EXTRA[type]];
+    $('#s-fields').innerHTML = keys.map((k) => `<div><label>${k}</label><input data-f="${k}" value="${esc(EXAMPLES[type][k] || '')}" /></div>`).join('');
+  };
+  $('#s-type').onchange = draw; draw();
+  $('#s-go').onclick = async () => {
+    const fields = {};
+    el.querySelectorAll('[data-f]').forEach((i) => { if (i.value.trim()) fields[i.dataset.f] = i.value.trim(); });
+    S.pendingOpen = true;
+    await api('POST', '/api/simulate', { entityType: $('#s-type').value, protocol: $('#s-proto').value, fields });
+  };
+}
+
+// ---- Records tab
+const TEMPLATE = (type) => ({
+  name: `New ${FRIENDLY[type].toLowerCase()} record`, entityType: type, enabled: true,
+  match: Object.fromEntries((S.matchKeys[type] || []).map((k) => [k, ''])),
+  results: [{ hit: false, class: type === 'PERSON' ? 'DriverLicense' : type === 'VEHICLE' ? 'VehicleRegistration' : 'NoRecord', system: 'DMV', responseType: 'Record', messageType: 'Record', interfaceName: 'MOCK_INTERFACE', systemName: 'DMV', messageData: 'FREE TEXT RETURNED BY THE INTERFACE', fields: {} }],
+});
+function renderRecords() {
+  const el = $('#tab-records');
+  const ed = S.editing;
+  el.innerHTML = `<div class="row" style="align-items:flex-start">
+    <div class="panel" style="flex:1"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
+      ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
+      <div style="margin-top:12px;display:flex;gap:6px"><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div></div>
+    <div class="panel" style="flex:1.4">${ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
+      <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
+      <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="ed-save">Save</button>${ed.data.id ? '<button class="danger" id="ed-del">Delete</button>' : ''}<span id="ed-msg" class="muted"></span></div>`
+      : '<div class="empty">Select a record, or add a new one.</div>'}</div></div>`;
+}
+
+// ---- Settings tab
+function renderSettings() {
+  const s = S.settings;
+  const sel = (k, opts) => `<select data-s="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(s[k]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  $('#tab-settings').innerHTML = `<div class="panel"><h3>Endpoint for the tenant</h3>
+      <table class="kv"><tr><td>REST / SOAP URL</td><td>${esc(location.origin)}/connectcic</td></tr><tr><td>Auth header</td><td>x-api-key: &lt;API_KEY env var&gt;${S.config.apiKeySet ? '' : ' (not set, endpoint is open)'}</td></tr><tr><td>Protocol</td><td>Detected per request: ConnectCicApi XML (REST) or a SOAP SendMessage envelope</td></tr></table>
+      <p class="muted">Set the interface agent's <code class="inline">COMMSYS_ENDPOINT</code> to the URL above and <code class="inline">COMMSYS_PROTOCOL</code> to REST or SOAP.</p></div>
+    <div class="panel"><h3>Behaviour</h3><div class="row">
+      <div><label>Callback URL (the interface agent's /interface-agent/v2/query-result)</label><input data-s="callbackUrl" value="${esc(s.callbackUrl)}" placeholder="https://..." /></div></div>
+      <div class="row" style="margin-top:10px">
+      <div><label>Ack delay (ms)</label><input type="number" min="0" data-s="ackDelayMs" value="${esc(s.ackDelayMs)}" /></div>
+      <div><label>Delay before results (ms)</label><input type="number" min="0" data-s="resultDelayMs" value="${esc(s.resultDelayMs)}" /></div>
+      <div><label>Delay between results (ms)</label><input type="number" min="0" data-s="betweenResultsMs" value="${esc(s.betweenResultsMs)}" /></div></div>
+      <div class="row" style="margin-top:10px">
+      <div><label>Acknowledgement</label>${sel('ackMode', [['success', 'Succeeded (200)'], ['http503', 'HTTP 503 Service Unavailable'], ['soapFault', 'SOAP fault (500)'], ['timeout', 'Never answer (60s hang)']])}</div>
+      <div><label>Results</label>${sel('resultMode', [['normal', 'Send matching results'], ['none', 'Never call back'], ['status', 'Send a Status "Down" message']])}</div>
+      <div><label>No matching record</label>${sel('noRecordOnMiss', [['true', 'Return a NoRecord result'], ['false', 'Return nothing']])}</div></div>
+      <div style="margin-top:12px"><button class="primary" id="set-save">Save settings</button> <span id="set-msg" class="muted"></span></div></div>`;
+}
+
+function setTab(name) {
+  S.tab = name;
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  ['log', 'send', 'records', 'settings'].forEach((t) => $('#tab-' + t).classList.toggle('hide', t !== name));
+  if (name === 'send') renderSend();
+  if (name === 'records') renderRecords();
+  if (name === 'settings') renderSettings();
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  const tab = t.closest('[data-tab]'); if (tab) return setTab(tab.dataset.tab);
+  const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter === 'all' ? null : f.dataset.filter; return renderCalls(); }
+  const raw = t.closest('[data-raw]');
+  if (raw) { const id = raw.dataset.raw; S.rawOpen.has(id) ? S.rawOpen.delete(id) : S.rawOpen.add(id); return renderCalls(); }
+  const rd = t.closest('[data-redeliver]'); if (rd) return api('POST', `/api/transactions/${rd.dataset.redeliver}/redeliver`);
+  const tg = t.closest('[data-toggle]'); if (tg) { const id = tg.dataset.toggle; S.open.has(id) ? S.open.delete(id) : S.open.add(id); return renderCalls(); }
+  const nw = t.closest('[data-new]'); if (nw) { S.editing = { data: TEMPLATE(nw.dataset.new) }; return renderRecords(); }
+  const ed = t.closest('[data-edit]'); if (ed) { S.editing = { data: structuredClone(S.records.find((r) => r.id === ed.dataset.edit)) }; return renderRecords(); }
+  if (t.id === 'ed-save') {
+    try {
+      const data = JSON.parse($('#ed-json').value);
+      const saved = data.id ? await api('PUT', `/api/records/${data.id}`, data) : await api('POST', '/api/records', data);
+      await refreshState(); S.editing = { data: saved }; renderRecords(); $('#ed-msg').textContent = 'Saved';
+    } catch (err) { $('#ed-msg').textContent = err.message; }
+  }
+  if (t.id === 'ed-del') { await api('DELETE', `/api/records/${S.editing.data.id}`); S.editing = null; await refreshState(); renderRecords(); }
+  if (t.id === 'reset' && confirm('Replace all records with the seed set?')) { await api('POST', '/api/records-reset'); S.editing = null; await refreshState(); renderRecords(); }
+  if (t.id === 'bulk') {
+    const text = prompt('Paste a JSON array of records (same shape as the editor):');
+    if (!text) return;
+    try { for (const rec of JSON.parse(text)) await api('POST', '/api/records', rec); await refreshState(); renderRecords(); } catch (err) { alert(err.message); }
+  }
+  if (t.id === 'set-save') {
+    const patch = {};
+    document.querySelectorAll('[data-s]').forEach((i) => { patch[i.dataset.s] = i.value === 'true' ? true : i.value === 'false' ? false : i.value; });
+    await api('PUT', '/api/settings', patch); await refreshState(); renderBanners(); $('#set-msg').textContent = 'Saved';
+  }
+});
+$('#clear').onclick = () => api('DELETE', '/api/transactions');
+
+async function refreshState() {
+  const st = await api('GET', '/api/state');
+  Object.assign(S, { settings: st.settings, records: st.records, txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
+  S.settings.noRecordOnMiss = String(S.settings.noRecordOnMiss) === 'true' || S.settings.noRecordOnMiss === true;
+}
+
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onopen = () => { $('#live').textContent = 'LIVE'; $('#live').className = 'pill p-green'; };
+  es.onerror = () => { $('#live').textContent = 'RECONNECTING'; $('#live').className = 'pill p-amber'; };
+  es.addEventListener('txn', (e) => upsertTxn(JSON.parse(e.data)));
+  es.addEventListener('clear', () => { S.txns = []; renderCalls(); });
+}
+
+(async () => { await refreshState(); renderBanners(); renderCalls(); connect(); })();
+</script>
+</body>
+</html>

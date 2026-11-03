@@ -1,0 +1,223 @@
+import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { isSoap, unwrapSoap, parseRequest, buildAckXml, buildResultXml, buildStatusXml, soapEnvelope, soapFault } from './xml.js';
+import { entityTypeOf, findRecords, noRecordResult } from './matcher.js';
+import { records, settings } from './store.js';
+
+const MAX_TXNS = 300;
+const MAX_BODY_LOG = 20000;
+
+export const bus = new EventEmitter();
+const txns = [];
+
+export const listTransactions = () => txns;
+export const getTransaction = (id) => txns.find((t) => t.id === id);
+export function clearTransactions() {
+  txns.length = 0;
+  bus.emit('clear');
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const clip = (s) => (typeof s === 'string' && s.length > MAX_BODY_LOG ? `${s.slice(0, MAX_BODY_LOG)}\n...[truncated]` : s);
+
+function publish(txn) {
+  bus.emit('txn', txn);
+}
+
+/** Mask credentials before they land in the on-screen log. */
+function redactHeaders(headers = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (['host', 'content-length', 'connection', 'accept-encoding'].includes(k)) continue;
+    out[k] = /key|auth|token|cookie/i.test(k) ? '(redacted)' : v;
+  }
+  return out;
+}
+
+/**
+ * The whole mock-Commsys request lifecycle. Returns the HTTP response to send back immediately
+ * (after any configured ack delay); result callbacks are delivered in the background.
+ */
+export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant' }) {
+  const cfg = settings();
+  const soap = isSoap(rawBody);
+  const txn = {
+    id: randomUUID(),
+    ts: new Date().toISOString(),
+    origin,
+    protocol: soap ? 'SOAP' : 'REST',
+    path,
+    headers: redactHeaders(headers),
+    sent: clip(rawBody),
+    requestXml: null,
+    queries: [],
+    ack: null,
+    results: [],
+    deliveries: [],
+    state: 'received',
+  };
+  txns.unshift(txn);
+  if (txns.length > MAX_TXNS) txns.pop();
+  publish(txn);
+
+  let parsed;
+  let responseUrl = null;
+  try {
+    let xml = rawBody;
+    if (soap) {
+      const un = unwrapSoap(rawBody);
+      xml = un.xml;
+      responseUrl = un.responseUrl;
+    }
+    txn.requestXml = xml;
+    parsed = parseRequest(xml);
+  } catch (err) {
+    return finishAck(txn, soap, {
+      httpStatus: 400,
+      status: 'Failed',
+      reason: 'Invalid request',
+      errors: [{ code: 400, category: 'HTTP', message: err.message }],
+      state: 'rejected',
+    });
+  }
+
+  txn.queries = parsed.transactions.map((t) => ({
+    transactionId: t.transactionId,
+    requestId: t.requestId,
+    entityType: entityTypeOf(t.requestId, t.messageType),
+    messageType: t.messageType,
+    auth: t.auth,
+    fields: t.fields,
+  }));
+
+  // Build every result up front so the UI can show the formatted response even if delivery fails.
+  for (const q of txn.queries) {
+    const t = parsed.transactions.find((x) => x.requestId === q.requestId);
+    const found = q.entityType ? findRecords(records(), q.entityType, q.fields) : [];
+    let list = found.flatMap((rec) => rec.results.map((res) => ({ rec, res })));
+    if (!list.length && cfg.noRecordOnMiss && q.entityType) list = [{ rec: null, res: noRecordResult(q.entityType) }];
+    list.forEach(({ rec, res }, i) => {
+      const deviceId = t.auth.deviceId || 'UNKNOWN_DEVICE';
+      const xml = buildResultXml({ deviceId, transactionId: q.transactionId, requestId: q.requestId, auth: t.auth, result: res, segment: i + 1, total: list.length });
+      txn.results.push({
+        requestId: q.requestId,
+        recordId: rec?.id ?? null,
+        recordName: rec?.name ?? '(no matching record)',
+        class: res.class,
+        hit: !!res.hit,
+        system: res.system,
+        messageType: res.messageType,
+        messageData: res.messageData,
+        fields: res.fields,
+        xml,
+      });
+    });
+    if (cfg.resultMode === 'status') {
+      txn.results.push({
+        requestId: q.requestId, recordId: null, recordName: '(status message)', class: 'Status', hit: false, system: '', messageType: 'Status',
+        messageData: 'Interface status message', fields: { Status: 'Down' },
+        xml: buildStatusXml({ deviceId: t.auth.deviceId || 'UNKNOWN_DEVICE', transactionId: q.transactionId, requestId: q.requestId, status: 'Down' }),
+        isStatus: true,
+      });
+    }
+  }
+  if (cfg.resultMode === 'status') txn.results = txn.results.filter((r) => r.isStatus);
+
+  const first = parsed.transactions[0];
+  const deviceId = first.auth.deviceId || 'UNKNOWN_DEVICE';
+
+  if (cfg.ackMode === 'http503') {
+    return finishAck(txn, soap, {
+      httpStatus: 503, status: 'Failed', reason: 'SERVICE UNAVAILABLE', deviceId, transactionId: first.transactionId,
+      errors: [{ code: 503, category: 'HTTP', message: 'SERVICE UNAVAILABLE' }], state: 'ack-failed',
+    });
+  }
+  if (cfg.ackMode === 'soapFault') {
+    const detail = buildAckXml({ deviceId, transactionId: first.transactionId, status: 'Failed', reason: 'Processing Failure', errors: [{ code: 500, category: 'SOAP', message: 'Simulated SOAP fault' }] });
+    const body = soapFault(detail);
+    txn.ack = { httpStatus: 500, contentType: 'text/xml', body };
+    txn.state = 'ack-failed';
+    publish(txn);
+    return txn.ack;
+  }
+  if (cfg.ackMode === 'timeout') {
+    txn.state = 'ack-timeout';
+    txn.ack = { httpStatus: 0, contentType: 'text/xml', body: '(no response sent: simulating a timeout, connection held for 60s)' };
+    publish(txn);
+    await sleep(60000);
+    return { httpStatus: 504, contentType: 'text/xml', body: '' };
+  }
+
+  if (cfg.ackDelayMs) await sleep(cfg.ackDelayMs);
+  const ack = finishAck(txn, soap, { httpStatus: 200, status: 'Succeeded', reason: 'Processed', deviceId, transactionId: first.transactionId, state: 'acked' });
+  if (cfg.resultMode !== 'none') deliverResults(txn, responseUrl).catch((err) => console.error('delivery failed', err.message));
+  else {
+    txn.state = 'no-callback';
+    publish(txn);
+  }
+  return ack;
+}
+
+function finishAck(txn, soap, { httpStatus, status, reason, errors = [], deviceId = 'UNKNOWN_DEVICE', transactionId = 'UNKNOWN', state }) {
+  const inner = buildAckXml({ deviceId, transactionId, status, reason, errors });
+  const body = soap ? (httpStatus === 200 ? soapEnvelope(inner, 'SendMessageResult') : soapFault(inner)) : inner;
+  txn.ack = { httpStatus, contentType: soap ? 'text/xml' : 'application/xml', body };
+  txn.state = state;
+  publish(txn);
+  return txn.ack;
+}
+
+function resolveCallbackUrl(requestUrl) {
+  if (requestUrl && process.env.ALLOW_REQUEST_RESPONSE_URL === 'true') return requestUrl;
+  return settings().callbackUrl || '';
+}
+
+/** POSTs each result to the callback URL, in order, with the configured delays. */
+export async function deliverResults(txn, requestUrl = null) {
+  const cfg = settings();
+  const url = resolveCallbackUrl(requestUrl);
+  if (!url) {
+    txn.state = 'held';
+    txn.deliveries.push({ ts: new Date().toISOString(), url: null, note: 'No callback URL configured. Results are shown above but were not sent.' });
+    publish(txn);
+    return;
+  }
+  txn.state = 'delivering';
+  publish(txn);
+  await sleep(cfg.resultDelayMs);
+  let failed = false;
+  for (let i = 0; i < txn.results.length; i++) {
+    const result = txn.results[i];
+    const body = txn.protocol === 'SOAP' ? soapEnvelope(result.xml, 'SendMessage') : result.xml;
+    const delivery = { ts: new Date().toISOString(), url, resultIndex: i, sent: clip(body), status: null, response: null, error: null, ms: null };
+    txn.deliveries.push(delivery);
+    const started = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': txn.protocol === 'SOAP' ? 'text/xml; charset=utf-8' : 'application/xml' },
+        body,
+        signal: AbortSignal.timeout(15000),
+      });
+      delivery.status = res.status;
+      delivery.response = clip(await res.text());
+      if (!res.ok) failed = true;
+    } catch (err) {
+      delivery.error = err.cause?.code ?? err.message;
+      failed = true;
+    }
+    delivery.ms = Date.now() - started;
+    publish(txn);
+    if (i < txn.results.length - 1) await sleep(cfg.betweenResultsMs);
+  }
+  txn.state = failed ? 'delivery-failed' : 'delivered';
+  publish(txn);
+}
+
+export async function redeliver(id) {
+  const txn = getTransaction(id);
+  if (!txn) return null;
+  txn.deliveries = [];
+  await deliverResults(txn);
+  return txn;
+}

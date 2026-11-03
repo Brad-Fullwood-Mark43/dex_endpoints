@@ -1,0 +1,84 @@
+# dex_endpoints
+
+A stand-in for the Commsys ConnectCIC service, for testing Mark43 Universal Search (federated search plus
+the interface agent) without a real state or federal data source. It speaks the same XML the interface
+agent sends, answers like Commsys does, and posts results back asynchronously. A web UI shows every call:
+what was sent, and the formatted response.
+
+**All data is synthetic.** Do not put real person, vehicle or case data in here. The service is meant to be
+reachable from the internet, so set `API_KEY` and `ADMIN_PASSWORD` before pointing anything at it.
+
+## How the real flow works (and what this mocks)
+
+```
+Federated Search --websocket--> interface agent --POST ConnectCicApi XML--> [this service]  (Commsys)
+                                      ^                                          |
+                                      +----- POST result XML to callback URL ----+   (async, 1 per result)
+```
+
+1. The interface agent POSTs a `ConnectCicApi` request (REST) or a SOAP `SendMessage` envelope. The
+   transaction id and `Request/Id` are `<queryId>_<ENTITY>` (for example `01ABC..._PERSON`).
+2. This service answers immediately with an acknowledgement (`TransactionResult` Succeeded).
+3. After a delay it POSTs each matching result to the callback URL (the agent's
+   `/interface-agent/v2/query-result`). The result's `Response/Request/Id` echoes the request id, which is
+   how Federated Search ties the result to the query. SOAP requests get SOAP callbacks.
+
+## Endpoints
+
+| Path | Purpose |
+| --- | --- |
+| `POST /connectcic` (also `/commsys`) | The Commsys endpoint. Detects REST vs SOAP per request. |
+| `GET /` | Web UI: call log, send test query, records, settings. |
+| `GET /health` | Liveness. |
+
+Auth on the Commsys endpoint: header `x-api-key: <API_KEY>` (the interface agent adds this header to its
+outbound calls), or `Authorization: <API_KEY>` / `Bearer <API_KEY>`. Without `API_KEY` set the endpoint is open.
+The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` as the password.
+
+## Configuration (environment variables)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `API_KEY` | none (open) | Required value of `x-api-key` on the Commsys endpoint. |
+| `ADMIN_PASSWORD` | none (open) | Basic-auth password for the UI and `/api/*`. |
+| `CALLBACK_URL` | none | Initial callback URL (editable in the UI Settings tab). |
+| `ALLOW_REQUEST_RESPONSE_URL` | `false` | Honour the `ResponseURL` inside a SOAP request. Off by default so callers cannot make the server POST to arbitrary URLs. |
+| `DATA_DIR` | `./data` | Where records and settings persist (`store.json`). On Railway, mount a volume and point this at it, or edits are lost on redeploy. |
+| `PORT` | `3000` | Set by Railway. |
+
+## Deploy on Railway
+
+1. New project, deploy from this repo (Nixpacks detects Node; `npm start` is the start command).
+2. Set `API_KEY`, `ADMIN_PASSWORD`, and `CALLBACK_URL`.
+3. Optional: add a volume at `/data` and set `DATA_DIR=/data`.
+4. Generate a public domain. Point the interface agent at it:
+   - `COMMSYS_ENDPOINT=https://<your-domain>/connectcic`
+   - `COMMSYS_PROTOCOL=REST` (or `SOAP`)
+   - the agent's outbound `x-api-key` header must equal `API_KEY` (it is the agent's `interface-agent.authorization` value).
+   - set the callback URL here to the agent's reachable `/interface-agent/v2/query-result`.
+
+## Test data
+
+Seed records cover person (license only, license plus wanted hit, missing person), vehicle (clean and
+stolen), firearm, boat and article. In the Records tab, edit a record as JSON, add new ones from a template,
+or bulk-import an array. A record matches when an identifier in the request equals the record's (name
+compares surname and first name; other identifiers ignore case and punctuation). Each entry in `results`
+becomes its own callback. No match returns a `NoRecord` result (switchable in Settings).
+
+Failure modes in Settings: ack as HTTP 503, SOAP fault, or never answered; results never sent, or a
+Status "Down" message instead.
+
+## Run locally
+
+```
+npm install
+npm test
+PORT=3000 npm start
+```
+
+## Known gaps
+
+- Built from the interface agent's and Federated Search's code and test fixtures, not from a live Commsys.
+  Real Commsys behaviour (auth scheme, segmenting, interface-specific `MessageData` formats) may differ.
+- The legacy DEx path is a different protocol (a framed TCP socket with XML bodies) and is not included.
+- The call log is in memory (last 300 calls); records and settings persist to `DATA_DIR`.
