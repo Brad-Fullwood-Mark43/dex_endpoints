@@ -109,6 +109,17 @@ test('delivery step posts each result in order and fails loudly on a bad callbac
   assert.deepEqual(got.map((g) => g.body), ['<a/>', '<b/>']);
   assert.equal(got[0].type, 'application/xml');
   assert.deepEqual((await deliver({ logger, configVars: {} }, { crossFlowTrigger: { results: { body: { data: '' } } } })).data, { delivered: 0, statuses: [] });
+
+  // The whole Gateway result passed instead of just `deliveries`, as a string or an object.
+  const wrapper = { status: 200, contentType: 'application/xml', body: '<ack/>', deliveries: job };
+  for (const data of [JSON.stringify(wrapper), wrapper]) {
+    got.length = 0;
+    const out = await deliver({ logger, configVars: { 'Callback URL': url.replace(/^/, '') } }, { crossFlowTrigger: { results: { body: { data } } } }).catch((e) => e);
+    assert.deepEqual(got.map((g) => g.body), ['<a/>', '<b/>'], 'wrapped payload still delivers both results');
+    assert.ok(out instanceof Error, 'second callback returns 500 again, so the step reports failure');
+  }
+  const empty = { status: 200, body: '<ack/>', deliveries: '' };
+  assert.deepEqual((await deliver({ logger, configVars: {} }, { crossFlowTrigger: { results: { body: { data: JSON.stringify(empty) } } } })).data, { delivered: 0, statuses: [] });
   cb.close();
 });
 

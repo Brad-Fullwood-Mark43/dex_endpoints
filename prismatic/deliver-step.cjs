@@ -10,7 +10,10 @@ module.exports = async ({ logger, configVars }, stepResults) => {
   const NS_SOAP = 'http://schema.commsys.com/xml/ConnectCic/Api/Soap';
 
   const payload = stepResults[CROSS_FLOW_STEP].results?.body?.data;
-  const job = typeof payload === 'string' ? (payload ? JSON.parse(payload) : null) : payload;
+  let job = typeof payload === 'string' ? (payload ? JSON.parse(payload) : null) : payload;
+  // Invoke Flow may pass either the `deliveries` string or the whole Gateway result, which carries it
+  // as `deliveries`. Accept both so a mis-picked reference cannot silently deliver nothing.
+  if (job && Object.prototype.hasOwnProperty.call(job, 'deliveries')) job = job.deliveries ? JSON.parse(job.deliveries) : null;
   if (!job || !Array.isArray(job.results) || !job.results.length) return { data: { delivered: 0, statuses: [] } };
 
   const url = String(configVars['Callback URL'] ?? '').trim();
