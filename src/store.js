@@ -1,13 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SEED_RECORDS, DEFAULT_SETTINGS } from './seed.js';
+import { SEED_RECORDS, SEED_VERSION, DEFAULT_SETTINGS } from './seed.js';
 import { dbEnabled, loadKv, saveKv } from './db.js';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const FILE = path.join(DATA_DIR, 'store.json');
 
-let state = { records: structuredClone(SEED_RECORDS), settings: { ...DEFAULT_SETTINGS } };
+let state = { records: structuredClone(SEED_RECORDS), settings: { ...DEFAULT_SETTINGS }, seedVersion: SEED_VERSION };
+
+/**
+ * When the seed set changes (SEED_VERSION in seed.js), refresh the seed records (ids starting with
+ * "seed-") and keep every record that was added or imported. Edits made to a seed record are replaced.
+ * Returns true if anything changed.
+ */
+function applySeedUpgrade() {
+  if (state.seedVersion === SEED_VERSION) return false;
+  const custom = state.records.filter((r) => !String(r.id).startsWith('seed-'));
+  state.records = [...structuredClone(SEED_RECORDS), ...custom];
+  state.seedVersion = SEED_VERSION;
+  return true;
+}
 
 function load() {
   try {
@@ -15,7 +28,9 @@ function load() {
     state = {
       records: Array.isArray(saved.records) ? saved.records : state.records,
       settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
+      seedVersion: saved.seedVersion,
     };
+    if (applySeedUpgrade()) save();
   } catch {
     // First run, or no writable volume: start from the seed.
   }
@@ -25,17 +40,21 @@ function load() {
 /** With a database configured, records and settings live there; otherwise in a JSON file under DATA_DIR. */
 export async function initStore() {
   if (!dbEnabled) return;
-  const [records, savedSettings] = await Promise.all([loadKv('records'), loadKv('settings')]);
-  if (Array.isArray(records)) state.records = records;
+  const [records, savedSettings, seedVersion] = await Promise.all([loadKv('records'), loadKv('settings'), loadKv('seedVersion')]);
+  if (Array.isArray(records)) {
+    state.records = records;
+    state.seedVersion = seedVersion ?? undefined;
+  }
   state.settings = { ...DEFAULT_SETTINGS, ...(savedSettings ?? {}) };
   if (process.env.CALLBACK_URL && !state.settings.callbackUrl) state.settings.callbackUrl = process.env.CALLBACK_URL;
-  if (!Array.isArray(records)) save();
+  if (!Array.isArray(records) || applySeedUpgrade()) save();
 }
 
 function save() {
   if (dbEnabled) {
     saveKv('records', state.records);
     saveKv('settings', state.settings);
+    saveKv('seedVersion', state.seedVersion);
     return;
   }
   try {
@@ -83,6 +102,7 @@ export function importRecords(list, { replace = false } = {}) {
 
 export function resetRecords() {
   state.records = structuredClone(SEED_RECORDS);
+  state.seedVersion = SEED_VERSION;
   save();
 }
 

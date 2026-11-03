@@ -93,6 +93,14 @@ or bulk-import an array. A record matches when an identifier in the request equa
 compares surname and first name; other identifiers ignore case and punctuation). Each entry in `results`
 becomes its own callback. No match returns a `NoRecord` result (switchable in Settings).
 
+Result fidelity: results carry the field names real Commsys responses use (checked against the interface
+agent's and Federated Search's exemplar responses). Normalized copies and split names (`NormalizedName`,
+`NameFirst`, `NormalizedBirthDateYear`, `NormalizedAddress`, ...) are derived automatically from the plain
+fields for every record, including CSV imports and UI edits; a value you set explicitly is never overridden.
+Seed records are versioned (`SEED_VERSION` in `src/seed.js`): when the seed changes, existing deployments
+refresh the records whose ids start with `seed-` and keep everything you added or imported. Edits made to a
+seed record itself are replaced, so copy a seed record to a new one before customising it.
+
 Failure modes in Settings: ack as HTTP 503, SOAP fault, or never answered; results never sent, or a
 Status "Down" message instead.
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { isSoap, unwrapSoap, parseRequest, parseResultDoc, buildAckXml, buildResultXml, buildStatusXml, soapEnvelope, soapFault } from './xml.js';
 import { entityTypeOf, findRecords, noRecordResult } from './matcher.js';
+import { withDerivedFields } from './normalize.js';
 import { records, settings } from './store.js';
 
 const MAX_TXNS = 300;
@@ -100,7 +101,8 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
     const found = q.entityType ? findRecords(records(), q.entityType, q.fields) : [];
     let list = found.flatMap((rec) => rec.results.map((res) => ({ rec, res })));
     if (!list.length && cfg.noRecordOnMiss && q.entityType) list = [{ rec: null, res: noRecordResult(q.entityType) }];
-    list.forEach(({ rec, res }, i) => {
+    list.forEach(({ rec, res: stored }, i) => {
+      const res = withDerivedFields(stored);
       const deviceId = t.auth.deviceId || 'UNKNOWN_DEVICE';
       const xml = buildResultXml({ deviceId, transactionId: q.transactionId, requestId: q.requestId, auth: t.auth, result: res, segment: i + 1, total: list.length });
       txn.results.push({
