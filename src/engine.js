@@ -41,7 +41,7 @@ function redactHeaders(headers = {}) {
  * The whole mock-Commsys request lifecycle. Returns the HTTP response to send back immediately
  * (after any configured ack delay); result callbacks are delivered in the background.
  */
-export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant' }) {
+export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant', deliver = true, onTxn = null }) {
   const cfg = settings();
   const soap = isSoap(rawBody);
   const txn = {
@@ -61,6 +61,7 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
   };
   txns.unshift(txn);
   if (txns.length > MAX_TXNS) txns.pop();
+  if (onTxn) onTxn(txn);
   publish(txn);
 
   let parsed;
@@ -147,16 +148,23 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
     txn.state = 'ack-timeout';
     txn.ack = { httpStatus: 0, contentType: 'text/xml', body: '(no response sent: simulating a timeout, connection held for 60s)' };
     publish(txn);
+    // A gateway (deliver: false) is told to simulate the timeout itself rather than hold this request open.
+    if (!deliver) return txn.ack;
     await sleep(60000);
     return { httpStatus: 504, contentType: 'text/xml', body: '' };
   }
 
-  if (cfg.ackDelayMs) await sleep(cfg.ackDelayMs);
+  if (cfg.ackDelayMs && deliver) await sleep(cfg.ackDelayMs);
   const ack = finishAck(txn, soap, { httpStatus: 200, status: 'Succeeded', reason: 'Processed', deviceId, transactionId: first.transactionId, state: 'acked' });
-  if (cfg.resultMode !== 'none') deliverResults(txn, responseUrl).catch((err) => console.error('delivery failed', err.message));
-  else {
+  if (cfg.resultMode === 'none') {
     txn.state = 'no-callback';
     publish(txn);
+  } else if (!deliver) {
+    // The caller (the gateway) takes the results from the response and delivers them itself.
+    txn.state = 'resolved';
+    publish(txn);
+  } else {
+    deliverResults(txn, responseUrl).catch((err) => console.error('delivery failed', err.message));
   }
   return ack;
 }

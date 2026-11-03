@@ -47,6 +47,22 @@ The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` a
 | `DATA_DIR` | `./data` | Used only when `DATABASE_URL` is not set: records and settings persist to `store.json` here (the call log is then in memory only). |
 | `PORT` | `3000` | Set by Railway. |
 
+## Spreadsheet import
+
+Records tab, Import CSV (template: `public/records-template.csv`). One row is one result. Rows that share a
+`record_name` become one record with several results, so a license row plus a wanted-person row for the same
+person is one person. Columns: `entity_type` (required), `record_name`, `result_class`, `hit`, `system`,
+`message_data`, then any Commsys field names; the identifier columns (name, license number, plate, VIN, serials)
+are what a query matches on. Re-importing a file updates the same records instead of duplicating them.
+
+## Gateway endpoints and the Prismatic flow
+
+`GET /allowlist` and `POST /resolve` are for the Prismatic gateway (see `prismatic/README.md`). They need
+`x-api-key: <API_KEY>` and return 503 if `API_KEY` is not set. `/allowlist` lists every identifying value in
+the records; `/resolve` runs the same pipeline as `/connectcic` but returns the acknowledgement and the
+results instead of calling anyone back. For this setup `API_KEY` should be a mock-only secret, not the real
+Federated Search key.
+
 ## Deploy on Railway
 
 1. New project, deploy from this repo (Nixpacks detects Node; `npm start` is the start command).

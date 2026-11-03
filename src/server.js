@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { processRequest, listTransactions, getTransaction, clearTransactions, redeliver, restoreTransactions, bus } from './engine.js';
 import { dbEnabled, initDb, loadCalls, saveCall, clearCalls } from './db.js';
-import { records, settings, upsertRecord, deleteRecord, resetRecords, updateSettings, initStore } from './store.js';
+import { records, settings, upsertRecord, deleteRecord, resetRecords, importRecords, updateSettings, initStore } from './store.js';
 import { buildRequestXml } from './requests.js';
-import { ENTITY_TYPES, MATCH_KEYS } from './matcher.js';
+import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
+import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,39 @@ export function createApp() {
     res.status(ack.httpStatus).type(ack.contentType).send(ack.body);
   };
   for (const route of ['/connectcic', '/commsys', '/connectcic/soap']) app.post(route, commsysAuth, xmlBody, handleCommsys);
+
+  // ---- Gateway endpoints (called by the Prismatic flow, not by the tenant) -------------------
+  // These always require API_KEY to be configured; unlike /connectcic they never fall back to open.
+  const gatewayAuth = (req, res, next) => {
+    if (!API_KEY) return res.status(503).json({ error: 'API_KEY is not configured on this service' });
+    const header = req.get('x-api-key') || '';
+    if (header && safeEqual(header, API_KEY)) return next();
+    res.status(401).json({ error: 'Unauthorized' });
+  };
+
+  // Every identifier the records can match, normalised, so the gateway can refuse anything else.
+  app.get('/allowlist', gatewayAuth, (_req, res) => res.json(allowlist(records())));
+
+  // Same pipeline as /connectcic, but nothing is delivered from here. The response carries the
+  // acknowledgement and the results so the gateway can return the ack and deliver the results itself.
+  app.post('/resolve', gatewayAuth, xmlBody, async (req, res) => {
+    let txn = null;
+    const ack = await processRequest({
+      rawBody: typeof req.body === 'string' ? req.body : '',
+      headers: req.headers,
+      path: req.path,
+      origin: 'gateway',
+      deliver: false,
+      onTxn: (t) => { txn = t; },
+    });
+    const deliverable = ack.httpStatus === 200 ? txn.results : [];
+    res.json({
+      protocol: txn.protocol,
+      ack: { httpStatus: ack.httpStatus, contentType: ack.contentType, body: ack.body },
+      results: deliverable.map((r) => ({ requestId: r.requestId, class: r.class, hit: r.hit, xml: r.xml })),
+      delays: { resultDelayMs: settings().resultDelayMs, betweenResultsMs: settings().betweenResultsMs },
+    });
+  });
 
   // ---- Admin UI + API -----------------------------------------------------------------------
   const adminAuth = (req, res, next) => {
@@ -101,6 +135,13 @@ export function createApp() {
   app.post('/api/records', (req, res) => res.json(upsertRecord(req.body ?? {})));
   app.put('/api/records/:id', (req, res) => res.json(upsertRecord({ ...req.body, id: req.params.id })));
   app.delete('/api/records/:id', (req, res) => (deleteRecord(req.params.id) ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' })));
+  // Spreadsheet import. Body: { csv: "<file text>", replace?: boolean }. See samples in public/records-template.csv.
+  app.post('/api/import-csv', (req, res) => {
+    const { records: parsed, errors } = recordsFromCsv(req.body?.csv);
+    if (!parsed.length) return res.status(400).json({ imported: 0, errors });
+    const total = importRecords(parsed, { replace: req.body?.replace === true });
+    res.json({ imported: parsed.length, total, errors });
+  });
   app.post('/api/records-reset', (_req, res) => {
     resetRecords();
     res.json({ ok: true, records: records() });

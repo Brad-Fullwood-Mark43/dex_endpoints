@@ -67,6 +67,38 @@ export function findRecords(records, entityType, requestFields) {
   return records.filter((r) => r.enabled !== false && recordMatches(r, entityType, requestFields));
 }
 
+/** "SMITH, JOHN M" and "JOHN SMITH" both become "SMITH|JOHN"; middle names are dropped. */
+export const nameKey = (raw) => {
+  const { last, first } = splitName(raw);
+  return `${last}|${first}`;
+};
+
+/** Request fields that can identify a person, vehicle or item. A gateway must see these on the allowlist. */
+export const IDENTIFYING_KEYS = [
+  'Name', 'BirthDate', 'SocialSecurityNumber', 'OperatorLicenseNumber', 'LicensePlateNumber',
+  'VehicleIdentificationNumber', 'GunSerialNumber', 'BoatHullIdNumber', 'RegistrationNumber', 'ArticleSerialNumber',
+];
+
+/**
+ * Every identifying value present in the enabled records (their match keys and their result
+ * fields), normalised, per field name. A gateway uses this to refuse any query that carries an
+ * identifying value not on the list (fail closed). Ids compare as `norm(value)` and names as
+ * `nameKey(value)`; both are exact matches with no prefix matching.
+ */
+export function allowlist(records) {
+  const out = {};
+  const add = (key, value) => {
+    if (!IDENTIFYING_KEYS.includes(key) || !value) return;
+    (out[key] ??= new Set()).add(key === 'Name' ? nameKey(value) : norm(value));
+  };
+  for (const r of records) {
+    if (r.enabled === false) continue;
+    for (const [k, v] of Object.entries(r.match ?? {})) add(k, v);
+    for (const res of r.results ?? []) for (const [k, v] of Object.entries(res.fields ?? {})) add(k, v);
+  }
+  return Object.fromEntries(IDENTIFYING_KEYS.filter((k) => out[k]).map((k) => [k, [...out[k]].sort()]));
+}
+
 /** The "nothing found" result Commsys returns when no interface has a record. */
 export function noRecordResult(entityType) {
   const messageData = {

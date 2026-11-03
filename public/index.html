@@ -125,7 +125,7 @@ function outcome(t) {
   if (['received', 'acked', 'delivering'].includes(t.state)) return { key: 'pending', label: 'IN PROGRESS', color: 'var(--blue)', cls: 'p-blue' };
   if (hit) return { key: 'hit', label: 'HIT', color: 'var(--red)', cls: 'p-red' };
   if (none) return { key: 'none', label: 'NO RECORD', color: 'var(--green)', cls: 'p-green' };
-  return { key: 'ok', label: t.state === 'held' ? 'HELD (NOT SENT)' : t.state === 'no-callback' ? 'NO CALLBACK' : 'RETURNED', color: 'var(--amber)', cls: t.state === 'delivered' ? 'p-green' : 'p-amber' };
+  return { key: 'ok', label: t.state === 'held' ? 'HELD (NOT SENT)' : t.state === 'no-callback' ? 'NO CALLBACK' : t.state === 'resolved' ? 'RETURNED TO GATEWAY' : 'RETURNED', color: 'var(--amber)', cls: ['delivered', 'resolved'].includes(t.state) ? 'p-green' : 'p-amber' };
 }
 
 const FRIENDLY = { PERSON: 'Person', VEHICLE: 'Vehicle', FIREARM: 'Firearm', BOAT: 'Boat', ARTICLE: 'Article' };
@@ -166,7 +166,7 @@ function renderResult(t, r, i) {
   const delChip = del
     ? del.error ? `<span class="pill p-red">DELIVERY ERROR ${esc(del.error)}</span>`
       : `<span class="pill ${del.status >= 200 && del.status < 300 ? 'p-green' : 'p-red'}">CALLBACK HTTP ${del.status} · ${del.ms}ms</span>`
-    : '<span class="pill p-grey">NOT DELIVERED</span>';
+    : t.state === 'resolved' ? '<span class="pill p-blue">HANDED TO GATEWAY FOR DELIVERY</span>' : '<span class="pill p-grey">NOT DELIVERED</span>';
   const color = r.hit ? 'var(--red)' : r.class === 'NoRecord' ? 'var(--green)' : 'var(--blue)';
   return `<div class="result" style="--c:${color}">
     <div class="result-head"><b>${esc(r.class)}</b><span class="pill ${r.hit ? 'p-red' : 'p-green'}">${r.hit ? 'HIT' : 'NO HIT'}</span><span class="pill p-grey">${esc(r.system || '-')}</span>${delChip}<span class="muted">${esc(r.recordName)}</span></div>
@@ -269,7 +269,7 @@ function renderRecords() {
   el.innerHTML = `<div class="row" style="align-items:flex-start">
     <div class="panel" style="flex:1"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
       ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
-      <div style="margin-top:12px;display:flex;gap:6px"><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div></div>
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div></div>
     <div class="panel" style="flex:1.4">${ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
       <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
       <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="ed-save">Save</button>${ed.data.id ? '<button class="danger" id="ed-del">Delete</button>' : ''}<span id="ed-msg" class="muted"></span></div>`
@@ -324,6 +324,7 @@ document.addEventListener('click', async (e) => {
   }
   if (t.id === 'ed-del') { await api('DELETE', `/api/records/${S.editing.data.id}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'reset' && confirm('Replace all records with the seed set?')) { await api('POST', '/api/records-reset'); S.editing = null; await refreshState(); renderRecords(); }
+  if (t.id === 'csv-btn') $('#csv-file').click();
   if (t.id === 'bulk') {
     const text = prompt('Paste a JSON array of records (same shape as the editor):');
     if (!text) return;
@@ -336,6 +337,18 @@ document.addEventListener('click', async (e) => {
   }
 });
 $('#clear').onclick = () => api('DELETE', '/api/transactions');
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'csv-file' || !e.target.files[0]) return;
+  const replace = confirm('Replace ALL existing records with this file?\n\nOK = replace everything\nCancel = add to (or update) existing records');
+  const csv = await e.target.files[0].text();
+  try {
+    const res = await fetch('/api/import-csv', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ csv, replace }) });
+    const out = await res.json();
+    await refreshState(); renderRecords();
+    $('#csv-msg').textContent = `Imported ${out.imported} record(s).${out.errors?.length ? ' Problems: ' + out.errors.join(' | ') : ''}`;
+  } catch (err) { $('#csv-msg').textContent = err.message; }
+});
 
 async function refreshState() {
   const st = await api('GET', '/api/state');

@@ -67,6 +67,20 @@ export function deleteRecord(id) {
   return state.records.length < before;
 }
 
+/** Adds or updates many records with a single save. With `replace`, everything else is removed first. */
+export function importRecords(list, { replace = false } = {}) {
+  const next = replace ? [] : [...state.records];
+  for (const input of list) {
+    const record = { enabled: true, results: [], match: {}, ...input, id: input.id || randomUUID() };
+    const i = next.findIndex((r) => r.id === record.id);
+    if (i >= 0) next[i] = record;
+    else next.push(record);
+  }
+  state.records = next;
+  save();
+  return state.records.length;
+}
+
 export function resetRecords() {
   state.records = structuredClone(SEED_RECORDS);
   save();

@@ -1,0 +1,8 @@
+entity_type,record_name,result_class,hit,system,message_data,Name,BirthDate,SexCode,RaceCode,OperatorLicenseNumber,SocialSecurityNumber,AddressStreet,AddressCity,AddressStateCode,AddressZipCode,LicensePlateNumber,VehicleIdentificationNumber,VehicleYear,VehicleMake,VehicleModel,VehicleColor,GunSerialNumber,GunMake,GunCaliber,BoatHullIdNumber,BoatName,ArticleSerialNumber,ArticleTypeCode,NCICNumber,OffenseCode
+PERSON,Jordan Example - license,DriverLicense,false,DMV,,"EXAMPLE, JORDAN A",19920214,F,W,E0000100,999-00-0100,300 TEST ST,SAMPLETOWN,XX,00003,,,,,,,,,,,,,,,
+PERSON,Jordan Example - license,WantedPerson,true,NCIC,*** WARRANT HIT - CONFIRM WITH ENTERING AGENCY ***,,,,,,,,,,,,,,,,,,,,,,,,W000000100,FAILURE TO APPEAR
+VEHICLE,Plate TST0100,VehicleRegistration,false,DMV,,"EXAMPLE, JORDAN A",,,,,,300 TEST ST,SAMPLETOWN,XX,00003,TST0100,1TEST00000A000100,2021,TEST,SEDAN,BLUE,,,,,,,,,
+VEHICLE,Plate STL0100 stolen,StolenVehicle,true,NCIC,,,,,,,,,,,,STL0100,1TEST00000S000100,2019,TEST,TRUCK,RED,,,,,,,,V000000100,
+FIREARM,Serial TESTGUN100,StolenGun,true,NCIC,,,,,,,,,,,,,,,,,,TESTGUN100,TEST,9MM,,,,,G000000100,
+BOAT,Hull TEST100B100,StolenBoat,true,NCIC,,,,,,,,,,,,,,,,,,,,,TEST100B100,SAMPLE TIDE,,,B000000100,
+ARTICLE,Article TESTART100,StolenArticle,true,NCIC,,,,,,,,,,,,,,,,,,,,,,,TESTART100,LAPTOP,A000000100,
