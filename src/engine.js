@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { isSoap, unwrapSoap, parseRequest, buildAckXml, buildResultXml, buildStatusXml, soapEnvelope, soapFault } from './xml.js';
+import { isSoap, unwrapSoap, parseRequest, parseResultDoc, buildAckXml, buildResultXml, buildStatusXml, soapEnvelope, soapFault } from './xml.js';
 import { entityTypeOf, findRecords, noRecordResult } from './matcher.js';
 import { records, settings } from './store.js';
 
@@ -223,6 +223,59 @@ export async function deliverResults(txn, requestUrl = null) {
   }
   txn.state = failed ? 'delivery-failed' : 'delivered';
   publish(txn);
+}
+
+/**
+ * Stand-in for the interface agent's /v2/query-result endpoint. Records the result the gateway
+ * delivers, answers the way the agent does, and marks the matching result on the original call
+ * as delivered so the call log shows the whole loop.
+ */
+export function recordCallback({ rawBody, headers = {}, path = '/interface-agent/v2/query-result' }) {
+  const soap = isSoap(rawBody);
+  const txn = {
+    id: randomUUID(),
+    ts: new Date().toISOString(),
+    origin: 'receiver',
+    protocol: soap ? 'SOAP' : 'REST',
+    path,
+    headers: redactHeaders(headers),
+    sent: clip(rawBody),
+    requestXml: null,
+    queries: [],
+    ack: null,
+    results: [],
+    deliveries: [],
+    state: 'callback-received',
+  };
+  txns.unshift(txn);
+  if (txns.length > MAX_TXNS) txns.pop();
+
+  let parsed;
+  try {
+    const xml = soap ? unwrapSoap(rawBody).xml : rawBody;
+    txn.requestXml = xml;
+    parsed = parseResultDoc(xml);
+  } catch (err) {
+    return finishAck(txn, soap, { httpStatus: 400, status: 'Failed', reason: 'Invalid request', errors: [{ code: 400, category: 'HTTP', message: err.message }], state: 'rejected' });
+  }
+
+  txn.results = parsed.map((p) => ({
+    requestId: p.requestId, recordId: null, recordName: '(callback from the gateway)', class: p.class, hit: p.hit,
+    system: p.system, messageType: p.messageType, messageData: p.messageData, fields: p.fields, xml: txn.requestXml,
+  }));
+
+  for (const p of parsed) {
+    const original = txns.find((t) => t.origin === 'gateway' && t.results.some((r) => r.requestId === p.requestId));
+    if (!original) continue;
+    const i = original.results.findIndex((r, idx) => r.requestId === p.requestId && r.class === p.class && !original.deliveries.some((d) => d.resultIndex === idx));
+    if (i < 0) continue;
+    original.deliveries.push({ ts: new Date().toISOString(), url: '(callback receiver)', resultIndex: i, sent: null, status: 200, response: null, error: null, ms: null });
+    if (original.results.every((_, idx) => original.deliveries.some((d) => d.resultIndex === idx))) original.state = 'delivered';
+    txn.linkedTo = original.id;
+    publish(original);
+  }
+
+  return finishAck(txn, soap, { httpStatus: 200, status: 'Succeeded', reason: 'Processed', deviceId: 'RECEIVER', transactionId: parsed[0]?.transactionId ?? 'UNKNOWN', state: 'callback-received' });
 }
 
 export async function redeliver(id) {

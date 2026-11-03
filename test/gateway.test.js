@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 process.env.API_KEY = 'mock-only-secret';
+process.env.RECEIVER_TOKEN = 'recv-test-token';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dexe-'));
 const { createApp } = await import('../src/server.js');
 const { listTransactions } = await import('../src/engine.js');
@@ -137,4 +138,48 @@ test('CSV import groups rows into records, reports bad rows, and feeds the allow
   const list = allowlist([...SEED_RECORDS, ...records]);
   assert.ok(list.Name.includes('EXAMPLE|JORDAN'));
   assert.ok(list.VehicleIdentificationNumber.includes('1TEST00000S000100'));
+});
+
+const receiverUrl = (token = 'recv-test-token') => `${mockUrl}/receiver/${token}/interface-agent/v2/query-result`;
+const loop = async (fields, id) => {
+  const xml = request(fields, { id });
+  const { data } = await run(xml);
+  assert.equal(data.status, 200);
+  const out = await deliver({ logger, configVars: { 'Callback URL': receiverUrl() } }, { crossFlowTrigger: { results: { body: { data: data.deliveries } } } });
+  return { data, out };
+};
+
+test('full loop: gateway -> delivery step -> receiver marks the original call delivered', async () => {
+  const { out } = await loop('<Name>DOE, JANE</Name>', 'LOOP1_PERSON');
+  assert.deepEqual(out.data, { delivered: 1, statuses: [200] });
+  const calls = listTransactions();
+  const original = calls.find((t) => t.origin === 'gateway' && t.queries[0]?.requestId === 'LOOP1_PERSON');
+  const callback = calls.find((t) => t.origin === 'receiver' && t.results[0]?.requestId === 'LOOP1_PERSON');
+  assert.equal(original.state, 'delivered');
+  assert.equal(original.deliveries[0].status, 200);
+  assert.equal(callback.linkedTo, original.id);
+  assert.equal(callback.results[0].class, 'DriverLicense');
+  assert.equal(callback.results[0].fields.OperatorLicenseNumber, 'D0000001');
+  assert.match(callback.ack.body, /<api:Status>Succeeded<\/api:Status>/);
+});
+
+test('a two-result query is only marked delivered once both callbacks arrive', async () => {
+  const xml = request('<LicensePlateNumber>STL9999</LicensePlateNumber>', { id: 'LOOP2_VEHICLE' });
+  const { data } = await run(xml);
+  const job = JSON.parse(data.deliveries);
+  assert.equal(job.results.length, 2);
+  const original = () => listTransactions().find((t) => t.origin === 'gateway' && t.queries[0]?.requestId === 'LOOP2_VEHICLE');
+  const post = (body) => fetch(receiverUrl(), { method: 'POST', headers: { 'content-type': 'application/xml' }, body });
+  assert.equal((await post(job.results[0])).status, 200);
+  assert.equal(original().state, 'resolved', 'one of two delivered is not enough');
+  assert.equal((await post(job.results[1])).status, 200);
+  assert.equal(original().state, 'delivered');
+});
+
+test('receiver: wrong token is a 404, garbage is a 400, and the token never reaches the call log', async () => {
+  assert.equal((await fetch(receiverUrl('wrong'), { method: 'POST', body: '<x/>' })).status, 404);
+  const bad = await fetch(receiverUrl(), { method: 'POST', headers: { 'content-type': 'application/xml' }, body: 'hello' });
+  assert.equal(bad.status, 400);
+  assert.match(await bad.text(), /Failed/);
+  assert.ok(!JSON.stringify(listTransactions()).includes('recv-test-token'));
 });

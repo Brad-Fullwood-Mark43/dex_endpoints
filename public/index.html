@@ -122,6 +122,7 @@ function outcome(t) {
   const none = t.results.length && t.results.every((r) => r.class === 'NoRecord');
   const failed = ['rejected', 'ack-failed', 'ack-timeout', 'delivery-failed'].includes(t.state);
   if (failed) return { key: 'error', label: t.state.replace('-', ' ').toUpperCase(), color: 'var(--red)', cls: 'p-red' };
+  if (t.origin === 'receiver') return { key: 'ok', label: 'CALLBACK RECEIVED', color: 'var(--blue)', cls: 'p-blue' };
   if (['received', 'acked', 'delivering'].includes(t.state)) return { key: 'pending', label: 'IN PROGRESS', color: 'var(--blue)', cls: 'p-blue' };
   if (hit) return { key: 'hit', label: 'HIT', color: 'var(--red)', cls: 'p-red' };
   if (none) return { key: 'none', label: 'NO RECORD', color: 'var(--green)', cls: 'p-green' };
@@ -131,6 +132,7 @@ function outcome(t) {
 const FRIENDLY = { PERSON: 'Person', VEHICLE: 'Vehicle', FIREARM: 'Firearm', BOAT: 'Boat', ARTICLE: 'Article' };
 const QUERY_KEYS = ['Name', 'OperatorLicenseNumber', 'LicensePlateNumber', 'VehicleIdentificationNumber', 'GunSerialNumber', 'BoatHullIdNumber', 'RegistrationNumber', 'ArticleSerialNumber', 'SocialSecurityNumber', 'BirthDate'];
 function querySummary(t) {
+  if (t.origin === 'receiver') return t.results.length ? `Callback: ${t.results.map((r) => r.class || 'result').join(', ')} for ${[...new Set(t.results.map((r) => r.requestId))].join(', ')}` : 'Callback received (no results in body)';
   if (!t.queries.length) return 'Unparseable request';
   return t.queries.map((q) => {
     const bits = QUERY_KEYS.filter((k) => q.fields[k]).map((k) => q.fields[k]);
@@ -165,7 +167,7 @@ function renderResult(t, r, i) {
   const del = t.deliveries.find((d) => d.resultIndex === i);
   const delChip = del
     ? del.error ? `<span class="pill p-red">DELIVERY ERROR ${esc(del.error)}</span>`
-      : `<span class="pill ${del.status >= 200 && del.status < 300 ? 'p-green' : 'p-red'}">CALLBACK HTTP ${del.status} · ${del.ms}ms</span>`
+      : `<span class="pill ${del.status >= 200 && del.status < 300 ? 'p-green' : 'p-red'}">CALLBACK HTTP ${del.status}${del.ms != null ? ' · ' + del.ms + 'ms' : ''}${del.url === '(callback receiver)' ? ' · received here' : ''}</span>`
     : t.state === 'resolved' ? '<span class="pill p-blue">HANDED TO GATEWAY FOR DELIVERY</span>' : '<span class="pill p-grey">NOT DELIVERED</span>';
   const color = r.hit ? 'var(--red)' : r.class === 'NoRecord' ? 'var(--green)' : 'var(--blue)';
   return `<div class="result" style="--c:${color}">
@@ -282,7 +284,11 @@ function renderSettings() {
   const sel = (k, opts) => `<select data-s="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(s[k]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   $('#tab-settings').innerHTML = `<div class="panel"><h3>Endpoint for the tenant</h3>
       <table class="kv"><tr><td>REST / SOAP URL</td><td>${esc(location.origin)}/connectcic</td></tr><tr><td>Auth header</td><td>x-api-key: &lt;API_KEY env var&gt;${S.config.apiKeySet ? '' : ' (not set, endpoint is open)'}</td></tr><tr><td>Protocol</td><td>Detected per request: ConnectCicApi XML (REST) or a SOAP SendMessage envelope</td></tr></table>
-      <p class="muted">Set the interface agent's <code class="inline">COMMSYS_ENDPOINT</code> to the URL above and <code class="inline">COMMSYS_PROTOCOL</code> to REST or SOAP.</p></div>
+      <p class="muted">Set the interface agent's <code class="inline">COMMSYS_ENDPOINT</code> to the URL above and <code class="inline">COMMSYS_PROTOCOL</code> to REST or SOAP.</p>
+      <h3 style="margin-top:14px">Callback receiver (stand-in for the agent)</h3>
+      ${S.config.receiverEnabled
+        ? `<p class="muted">Enabled. Point the gateway's Callback URL at <code class="inline">${esc(location.origin)}/receiver/&lt;RECEIVER_TOKEN&gt;/interface-agent/v2/query-result</code>. Callbacks appear in the call log and mark the original call's results as delivered.</p>`
+        : '<p class="muted">Disabled. Set the <code class="inline">RECEIVER_TOKEN</code> environment variable to turn it on.</p>'}</div>
     <div class="panel"><h3>Behaviour</h3><div class="row">
       <div><label>Callback URL (the interface agent's /interface-agent/v2/query-result)</label><input data-s="callbackUrl" value="${esc(s.callbackUrl)}" placeholder="https://..." /></div></div>
       <div class="row" style="margin-top:10px">

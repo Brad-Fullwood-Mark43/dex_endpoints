@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { processRequest, listTransactions, getTransaction, clearTransactions, redeliver, restoreTransactions, bus } from './engine.js';
+import { processRequest, recordCallback, listTransactions, getTransaction, clearTransactions, redeliver, restoreTransactions, bus } from './engine.js';
 import { dbEnabled, initDb, loadCalls, saveCall, clearCalls } from './db.js';
 import { records, settings, upsertRecord, deleteRecord, resetRecords, importRecords, updateSettings, initStore } from './store.js';
 import { buildRequestXml } from './requests.js';
@@ -13,6 +13,7 @@ import { buildAckXml, soapEnvelope } from './xml.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const API_KEY = process.env.API_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const RECEIVER_TOKEN = process.env.RECEIVER_TOKEN || '';
 
 const safeEqual = (a, b) => {
   const x = Buffer.from(String(a));
@@ -78,6 +79,16 @@ export function createApp() {
     });
   });
 
+  // ---- Stand-in for the interface agent's result endpoint -----------------------------------
+  // The delivery step cannot send headers, so the secret is in the path. Disabled (404) unless
+  // RECEIVER_TOKEN is set; a wrong token also gets 404 so the route is not discoverable.
+  // The token is never logged or stored with the call.
+  app.post('/receiver/:token/interface-agent/v2/query-result', xmlBody, (req, res) => {
+    if (!RECEIVER_TOKEN || !safeEqual(req.params.token, RECEIVER_TOKEN)) return res.status(404).end();
+    const ack = recordCallback({ rawBody: typeof req.body === 'string' ? req.body : '', headers: req.headers });
+    res.status(ack.httpStatus).type(ack.contentType).send(ack.body);
+  });
+
   // ---- Admin UI + API -----------------------------------------------------------------------
   const adminAuth = (req, res, next) => {
     if (!ADMIN_PASSWORD) return next();
@@ -99,7 +110,7 @@ export function createApp() {
       transactions: listTransactions(),
       entityTypes: ENTITY_TYPES,
       matchKeys: MATCH_KEYS,
-      config: { apiKeySet: !!API_KEY, adminPasswordSet: !!ADMIN_PASSWORD, allowRequestResponseUrl: process.env.ALLOW_REQUEST_RESPONSE_URL === 'true' },
+      config: { apiKeySet: !!API_KEY, adminPasswordSet: !!ADMIN_PASSWORD, receiverEnabled: !!RECEIVER_TOKEN, allowRequestResponseUrl: process.env.ALLOW_REQUEST_RESPONSE_URL === 'true' },
     }),
   );
 

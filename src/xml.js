@@ -83,6 +83,36 @@ export function parseRequest(xml) {
   };
 }
 
+const RESULT_META = ['Class', 'System', 'MessageType', 'MessageData', 'ResponseType', 'IntInterfaceName', 'IntSystemName', 'IntTransId', 'CurrentDataBlock', 'QueryState', 'SendToUser'];
+
+/**
+ * Parses a Commsys result document (what the interface agent receives on /v2/query-result).
+ * Returns one entry per Response element; a document with only TransactionResult elements
+ * yields an empty list. Throws if the root is not ConnectCicApi.
+ */
+export function parseResultDoc(xml) {
+  const api = parser.parse(xml)?.ConnectCicApi;
+  if (!api) throw new Error('Root element is not ConnectCicApi');
+  const out = [];
+  for (const tx of asArray(api.Transactions?.Transaction)) {
+    const response = tx.LawEnforcementTransaction?.Transaction?.Response;
+    if (!response) continue;
+    const all = {};
+    for (const [k, v] of Object.entries(response)) if (typeof v === 'string' && v !== '') all[k] = v;
+    out.push({
+      transactionId: tx['@_id'] ?? null,
+      requestId: response.Request?.Id ?? tx['@_id'] ?? null,
+      hit: String(response.Hit?.Detected ?? '0') === '1',
+      class: all.Class ?? '',
+      system: all.System ?? '',
+      messageType: all.MessageType ?? '',
+      messageData: all.MessageData ?? '',
+      fields: Object.fromEntries(Object.entries(all).filter(([k]) => !RESULT_META.includes(k))),
+    });
+  }
+  return out;
+}
+
 export function buildAckXml({ deviceId, transactionId, status = 'Succeeded', reason = 'Processed', errors = [] }) {
   const errorXml = errors.length
     ? `<api:Errors>${errors

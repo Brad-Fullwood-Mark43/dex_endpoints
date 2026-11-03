@@ -42,6 +42,7 @@ The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` a
 | `API_KEY` | none (open) | Required value of `x-api-key` on the Commsys endpoint. |
 | `ADMIN_PASSWORD` | none (open) | Basic-auth password for the UI and `/api/*`. |
 | `CALLBACK_URL` | none | Initial callback URL (editable in the UI Settings tab). |
+| `RECEIVER_TOKEN` | none (receiver off) | Turns on the callback receiver (see below). A long random string; it is part of the receiver's URL and is never logged. |
 | `ALLOW_REQUEST_RESPONSE_URL` | `false` | Honour the `ResponseURL` inside a SOAP request. Off by default so callers cannot make the server POST to arbitrary URLs. |
 | `DATABASE_URL` | none | Postgres connection string. When set, records, settings and the call log (last 300) persist there. Railway sets this when you reference the Postgres service. Set `PGSSL=true` if the database requires TLS. |
 | `DATA_DIR` | `./data` | Used only when `DATABASE_URL` is not set: records and settings persist to `store.json` here (the call log is then in memory only). |
@@ -62,6 +63,15 @@ are what a query matches on. Re-importing a file updates the same records instea
 the records; `/resolve` runs the same pipeline as `/connectcic` but returns the acknowledgement and the
 results instead of calling anyone back. For this setup `API_KEY` should be a mock-only secret, not the real
 Federated Search key.
+
+## Callback receiver (stand-in for the interface agent)
+
+To test delivery without a real agent, set `RECEIVER_TOKEN` and point the gateway's Callback URL at
+`https://<this service>/receiver/<RECEIVER_TOKEN>/interface-agent/v2/query-result`. It accepts the results the
+way the agent's `/v2/query-result` does (REST or SOAP), replies with a `Succeeded` acknowledgement, shows each
+callback in the call log, and marks the matching results on the original call as delivered. The delivery step
+cannot send headers, so the secret is in the path; with `RECEIVER_TOKEN` unset, or a wrong token, the route is a
+404. Anyone with the URL can add entries to the log, so treat the URL as a secret and rotate the token if it leaks.
 
 ## Deploy on Railway
 
