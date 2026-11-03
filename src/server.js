@@ -2,8 +2,9 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { processRequest, listTransactions, getTransaction, clearTransactions, redeliver, bus } from './engine.js';
-import { records, settings, upsertRecord, deleteRecord, resetRecords, updateSettings } from './store.js';
+import { processRequest, listTransactions, getTransaction, clearTransactions, redeliver, restoreTransactions, bus } from './engine.js';
+import { dbEnabled, initDb, loadCalls, saveCall, clearCalls } from './db.js';
+import { records, settings, upsertRecord, deleteRecord, resetRecords, updateSettings, initStore } from './store.js';
 import { buildRequestXml } from './requests.js';
 import { ENTITY_TYPES, MATCH_KEYS } from './matcher.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
@@ -125,8 +126,15 @@ export function createApp() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
+  await initDb();
+  await initStore();
+  if (dbEnabled) {
+    restoreTransactions(await loadCalls());
+    bus.on('txn', saveCall);
+    bus.on('clear', clearCalls);
+  }
   createApp().listen(port, '0.0.0.0', () => {
-    console.log(`dex_endpoints listening on :${port}`);
+    console.log(`dex_endpoints listening on :${port}  (storage: ${dbEnabled ? 'postgres' : 'file'})`);
     console.log(`  Commsys endpoint : POST /connectcic   (${API_KEY ? 'x-api-key required' : 'OPEN: set API_KEY'})`);
     console.log(`  Web UI           : /                  (${ADMIN_PASSWORD ? 'password protected' : 'OPEN: set ADMIN_PASSWORD'})`);
   });

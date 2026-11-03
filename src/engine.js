@@ -11,6 +11,9 @@ export const bus = new EventEmitter();
 const txns = [];
 
 export const listTransactions = () => txns;
+export function restoreTransactions(list) {
+  txns.splice(0, txns.length, ...list);
+}
 export const getTransaction = (id) => txns.find((t) => t.id === id);
 export function clearTransactions() {
   txns.length = 0;

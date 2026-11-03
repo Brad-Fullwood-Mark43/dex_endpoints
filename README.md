@@ -43,14 +43,16 @@ The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` a
 | `ADMIN_PASSWORD` | none (open) | Basic-auth password for the UI and `/api/*`. |
 | `CALLBACK_URL` | none | Initial callback URL (editable in the UI Settings tab). |
 | `ALLOW_REQUEST_RESPONSE_URL` | `false` | Honour the `ResponseURL` inside a SOAP request. Off by default so callers cannot make the server POST to arbitrary URLs. |
-| `DATA_DIR` | `./data` | Where records and settings persist (`store.json`). On Railway, mount a volume and point this at it, or edits are lost on redeploy. |
+| `DATABASE_URL` | none | Postgres connection string. When set, records, settings and the call log (last 300) persist there. Railway sets this when you reference the Postgres service. Set `PGSSL=true` if the database requires TLS. |
+| `DATA_DIR` | `./data` | Used only when `DATABASE_URL` is not set: records and settings persist to `store.json` here (the call log is then in memory only). |
 | `PORT` | `3000` | Set by Railway. |
 
 ## Deploy on Railway
 
 1. New project, deploy from this repo (Nixpacks detects Node; `npm start` is the start command).
 2. Set `API_KEY`, `ADMIN_PASSWORD`, and `CALLBACK_URL`.
-3. Optional: add a volume at `/data` and set `DATA_DIR=/data`.
+3. Add a Postgres database to the project and give this service a `DATABASE_URL` variable that references it
+   (`${{Postgres.DATABASE_URL}}`). Tables are created on first start. Without it, data lives in a file and is lost on redeploy unless you mount a volume and set `DATA_DIR`.
 4. Generate a public domain. Point the interface agent at it:
    - `COMMSYS_ENDPOINT=https://<your-domain>/connectcic`
    - `COMMSYS_PROTOCOL=REST` (or `SOAP`)
@@ -81,4 +83,4 @@ PORT=3000 npm start
 - Built from the interface agent's and Federated Search's code and test fixtures, not from a live Commsys.
   Real Commsys behaviour (auth scheme, segmenting, interface-specific `MessageData` formats) may differ.
 - The legacy DEx path is a different protocol (a framed TCP socket with XML bodies) and is not included.
-- The call log is in memory (last 300 calls); records and settings persist to `DATA_DIR`.
+- Without `DATABASE_URL` the call log is in memory only (last 300 calls). Calls that were mid-delivery when the server restarted keep their last recorded state.

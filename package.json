@@ -4,13 +4,16 @@
   "description": "Mock Commsys ConnectCIC endpoint (REST + SOAP) with a live web UI, for Universal Search testing with synthetic data",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/"
   },
   "dependencies": {
     "express": "4.21.2",
-    "fast-xml-parser": "4.5.1"
+    "fast-xml-parser": "4.5.1",
+    "pg": "8.13.1"
   }
 }

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { SEED_RECORDS, DEFAULT_SETTINGS } from './seed.js';
+import { dbEnabled, loadKv, saveKv } from './db.js';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const FILE = path.join(DATA_DIR, 'store.json');
@@ -21,7 +22,22 @@ function load() {
   if (process.env.CALLBACK_URL && !state.settings.callbackUrl) state.settings.callbackUrl = process.env.CALLBACK_URL;
 }
 
+/** With a database configured, records and settings live there; otherwise in a JSON file under DATA_DIR. */
+export async function initStore() {
+  if (!dbEnabled) return;
+  const [records, savedSettings] = await Promise.all([loadKv('records'), loadKv('settings')]);
+  if (Array.isArray(records)) state.records = records;
+  state.settings = { ...DEFAULT_SETTINGS, ...(savedSettings ?? {}) };
+  if (process.env.CALLBACK_URL && !state.settings.callbackUrl) state.settings.callbackUrl = process.env.CALLBACK_URL;
+  if (!Array.isArray(records)) save();
+}
+
 function save() {
+  if (dbEnabled) {
+    saveKv('records', state.records);
+    saveKv('settings', state.settings);
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(state, null, 2));
