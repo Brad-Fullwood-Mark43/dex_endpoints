@@ -164,7 +164,7 @@ export function buildResultXml({ deviceId, transactionId, requestId, auth = {}, 
     IntTransId: randomCode(4),
     MessageData: result.messageData ?? '',
     MessageType: result.messageType ?? result.responseType ?? '',
-    QueryState: '',
+    QueryState: result.queryState ?? '',
     ResponseType: result.responseType ?? result.messageType ?? '',
     SendToUser: '',
     System: result.system ?? '',
@@ -188,7 +188,7 @@ export function buildResultXml({ deviceId, transactionId, requestId, auth = {}, 
     `                    <TotalSegments>${total}</TotalSegments>\n                    <SegmentRecombinationId>${randomCode(13)}</SegmentRecombinationId>\n                    <CurrentSegment>${segment}</CurrentSegment>\n` +
     `                </Session>\n                <Transaction>\n                    <Response>\n` +
     `                        <Request>\n                            <Id>${esc(requestId)}</Id>\n                        </Request>\n` +
-    `                        <Hit>\n                            <Details></Details>\n                            <Detected>${result.hit ? 1 : 0}</Detected>\n                        </Hit>\n` +
+    `                        <Hit>\n                            <Details></Details>\n                            <Detected>${result.hitBlank ? '' : result.hit ? 1 : 0}</Detected>\n                        </Hit>\n` +
     `                        <Image/>\n                        <SecondaryRequests></SecondaryRequests>\n` +
     `                        ${body}\n` +
     `                    </Response>\n                </Transaction>\n            </LawEnforcementTransaction>\n        </api:Transaction>\n    </api:Transactions>\n</api:ConnectCicApi>\n`

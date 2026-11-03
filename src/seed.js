@@ -350,4 +350,6 @@ export const DEFAULT_SETTINGS = {
   resultMode: 'normal',
   // Return a NoRecord result when nothing matches (otherwise: no callback).
   noRecordOnMiss: true,
+  // Which interface's wording results use (see src/regions.js). GENERIC = no regional quirks.
+  region: 'GENERIC',
 };

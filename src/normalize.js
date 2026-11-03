@@ -45,12 +45,15 @@ export function enrichFields(fields = {}) {
     set('NormalizedNameLast', name.last);
     set('NormalizedNameFirst', name.first);
     set('NormalizedNameMiddle', name.middle);
+    // Real exemplars carry these two even when empty.
+    if (out.NormalizedNameMiddle === undefined) out.NormalizedNameMiddle = '';
+    if (out.NormalizedNameSuffix === undefined) out.NormalizedNameSuffix = '';
   }
 
   datePart('BirthDate', 'BirthDate', true);
-  datePart('IssueDate', 'IssueDate', false);
-  datePart('ExpirationDate', 'ExpirationDate', false);
-  datePart('LicensePlateExpirationDate', 'LicensePlateExpirationDate', false);
+  datePart('IssueDate', 'IssueDate', true);
+  datePart('ExpirationDate', 'ExpirationDate', true);
+  datePart('LicensePlateExpirationDate', 'LicensePlateExpirationDate', true);
   datePart('TheftDate', 'TheftDate', true);
   if (fields.VehicleYear) set('NormalizedVehicleYear', fields.VehicleYear);
   if (fields.LicensePlateYear) set('NormalizedLicensePlateYear', fields.LicensePlateYear);

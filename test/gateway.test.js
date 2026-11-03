@@ -183,3 +183,10 @@ test('receiver: wrong token is a 404, garbage is a 400, and the token never reac
   assert.match(await bad.text(), /Failed/);
   assert.ok(!JSON.stringify(listTransactions()).includes('recv-test-token'));
 });
+
+test('the gateway step\'s identifying-field list matches the repo, so the Prismatic copy cannot drift silently', async () => {
+  const { IDENTIFYING_KEYS } = await import('../src/matcher.js');
+  const source = fs.readFileSync(new URL('../prismatic/gateway-step.cjs', import.meta.url), 'utf8');
+  const listed = [...source.match(/const IDENTIFYING = \[([^\]]+)\]/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(listed.sort(), [...IDENTIFYING_KEYS].sort(), 'update prismatic/gateway-step.cjs (and the Prismatic step) when IDENTIFYING_KEYS changes');
+});

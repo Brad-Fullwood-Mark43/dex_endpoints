@@ -1,5 +1,7 @@
 # dex_endpoints
 
+> Changing responses, or working on this repo with Claude? Start with `CLAUDE.md` and `docs/RESPONSES.md`.
+
 A stand-in for the Commsys ConnectCIC service, for testing Mark43 Universal Search (federated search plus
 the interface agent) without a real state or federal data source. It speaks the same XML the interface
 agent sends, answers like Commsys does, and posts results back asynchronously. A web UI shows every call:
@@ -92,6 +94,9 @@ stolen), firearm, boat and article. In the Records tab, edit a record as JSON, a
 or bulk-import an array. A record matches when an identifier in the request equals the record's (name
 compares surname and first name; other identifiers ignore case and punctuation). Each entry in `results`
 becomes its own callback. No match returns a `NoRecord` result (switchable in Settings).
+
+Regions: Settings has a Region choice (CA CLETS/eSUN, LA LEMS, FL, SD, KS, HI, TN) that rewords results the way that
+state's interface does. See `docs/RESPONSES.md` for exactly what each region changes and how well each is evidenced.
 
 Result fidelity: results carry the field names real Commsys responses use (checked against the interface
 agent's and Federated Search's exemplar responses). Normalized copies and split names (`NormalizedName`,

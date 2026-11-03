@@ -45,6 +45,9 @@ test('derived fields: name parts, normalized dates and address, without overridi
   assert.equal(out.NormalizedTheftDateYear, '2026');
   assert.equal(out.NormalizedAddress, '1 TEST ST, TESTVILLE, XX 00001');
   assert.equal(out.NormalizedVehicleYear, '2021');
+  const parts = enrichFields({ IssueDate: '20240110', ExpirationDate: '20301021', Name: 'DOE, JANE' });
+  assert.deepEqual([parts.NormalizedIssueDateYear, parts.NormalizedExpirationDateMonth, parts.NormalizedExpirationDateDay], ['2024', '10', '21']);
+  assert.deepEqual([parts.NormalizedNameMiddle, parts.NormalizedNameSuffix], ['', ''], 'empty middle and suffix are still emitted, as in the exemplars');
   assert.deepEqual(enrichFields({ Name: 'MADONNA' }).NormalizedName, 'MADONNA');
   assert.deepEqual(enrichFields({}), {});
 });

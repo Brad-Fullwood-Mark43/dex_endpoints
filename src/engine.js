@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { isSoap, unwrapSoap, parseRequest, parseResultDoc, buildAckXml, buildResultXml, buildStatusXml, soapEnvelope, soapFault } from './xml.js';
 import { entityTypeOf, findRecords, noRecordResult } from './matcher.js';
 import { withDerivedFields } from './normalize.js';
+import { applyRegion, isRegion, DEFAULT_REGION } from './regions.js';
 import { records, settings } from './store.js';
 
 const MAX_TXNS = 300;
@@ -42,13 +43,15 @@ function redactHeaders(headers = {}) {
  * The whole mock-Commsys request lifecycle. Returns the HTTP response to send back immediately
  * (after any configured ack delay); result callbacks are delivered in the background.
  */
-export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant', deliver = true, onTxn = null }) {
+export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant', deliver = true, onTxn = null, region = null }) {
   const cfg = settings();
   const soap = isSoap(rawBody);
+  const regionId = region && isRegion(region) ? region : isRegion(cfg.region) ? cfg.region : DEFAULT_REGION;
   const txn = {
     id: randomUUID(),
     ts: new Date().toISOString(),
     origin,
+    region: regionId,
     protocol: soap ? 'SOAP' : 'REST',
     path,
     headers: redactHeaders(headers),
@@ -102,7 +105,7 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
     let list = found.flatMap((rec) => rec.results.map((res) => ({ rec, res })));
     if (!list.length && cfg.noRecordOnMiss && q.entityType) list = [{ rec: null, res: noRecordResult(q.entityType) }];
     list.forEach(({ rec, res: stored }, i) => {
-      const res = withDerivedFields(stored);
+      const res = applyRegion(withDerivedFields(stored), regionId);
       const deviceId = t.auth.deviceId || 'UNKNOWN_DEVICE';
       const xml = buildResultXml({ deviceId, transactionId: q.transactionId, requestId: q.requestId, auth: t.auth, result: res, segment: i + 1, total: list.length });
       txn.results.push({

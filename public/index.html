@@ -95,7 +95,7 @@
 </main>
 
 <script>
-const S = { settings: {}, records: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
+const S = { settings: {}, regions: [], records: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const api = async (method, url, body) => {
@@ -199,7 +199,7 @@ function renderCall(t) {
   const open = S.open.has(t.id);
   const time = new Date(t.ts).toLocaleTimeString();
   return `<div class="call ${open ? 'open' : ''}" data-id="${esc(t.id)}" style="--c:${o.color}">
-    <div class="call-head" data-toggle="${esc(t.id)}"><span class="chev">▶</span><span class="time">${esc(time)}</span><span class="pill p-grey">${esc(t.protocol)}</span><span class="q">${esc(querySummary(t))}</span><span class="pill ${o.cls}">${esc(o.label)}</span></div>
+    <div class="call-head" data-toggle="${esc(t.id)}"><span class="chev">▶</span><span class="time">${esc(time)}</span><span class="pill p-grey">${esc(t.protocol)}</span>${t.region && t.region !== 'GENERIC' ? `<span class="pill p-blue">${esc(t.region)}</span>` : ''}<span class="q">${esc(querySummary(t))}</span><span class="pill ${o.cls}">${esc(o.label)}</span></div>
     ${open ? `<div class="call-body">${renderSent(t)}${renderBack(t)}</div>` : ''}
   </div>`;
 }
@@ -241,7 +241,8 @@ function renderSend() {
   const el = $('#tab-send');
   el.innerHTML = `<div class="panel"><div class="row">
     <div><label>Query type</label><select id="s-type">${S.entityTypes.map((e) => `<option value="${e}">${FRIENDLY[e]}</option>`).join('')}</select></div>
-    <div><label>Protocol</label><select id="s-proto"><option>REST</option><option>SOAP</option></select></div></div>
+    <div><label>Protocol</label><select id="s-proto"><option>REST</option><option>SOAP</option></select></div>
+    <div><label>Region</label><select id="s-region"><option value="">Use the Settings region (${esc(S.settings.region || 'GENERIC')})</option>${S.regions.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join('')}</select></div></div>
     <div id="s-fields" class="row" style="margin-top:10px"></div>
     <p class="muted">Goes through the same pipeline as a tenant request, including the acknowledgement and callback. Seed records: Jane Doe (license only), Alex Sample (license plus wanted hit), Casey Example (missing person), plates TST1234 and STL9999 (stolen), TESTGUN001, TEST12345B606, TESTART777.</p>
     <button class="primary" id="s-go">Send query</button></div>`;
@@ -255,7 +256,7 @@ function renderSend() {
     const fields = {};
     el.querySelectorAll('[data-f]').forEach((i) => { if (i.value.trim()) fields[i.dataset.f] = i.value.trim(); });
     S.pendingOpen = true;
-    await api('POST', '/api/simulate', { entityType: $('#s-type').value, protocol: $('#s-proto').value, fields });
+    await api('POST', '/api/simulate', { entityType: $('#s-type').value, protocol: $('#s-proto').value, region: $('#s-region').value, fields });
   };
 }
 
@@ -295,6 +296,9 @@ function renderSettings() {
       <div><label>Ack delay (ms)</label><input type="number" min="0" data-s="ackDelayMs" value="${esc(s.ackDelayMs)}" /></div>
       <div><label>Delay before results (ms)</label><input type="number" min="0" data-s="resultDelayMs" value="${esc(s.resultDelayMs)}" /></div>
       <div><label>Delay between results (ms)</label><input type="number" min="0" data-s="betweenResultsMs" value="${esc(s.betweenResultsMs)}" /></div></div>
+      <div class="row" style="margin-top:10px">
+      <div><label>Region (how results are worded)</label>${sel('region', S.regions.map((r) => [r.id, r.label]))}
+        <div class="muted" id="region-note" style="margin-top:4px">${esc((S.regions.find((r) => r.id === (s.region || 'GENERIC')) || {}).note || '')}</div></div></div>
       <div class="row" style="margin-top:10px">
       <div><label>Acknowledgement</label>${sel('ackMode', [['success', 'Succeeded (200)'], ['http503', 'HTTP 503 Service Unavailable'], ['soapFault', 'SOAP fault (500)'], ['timeout', 'Never answer (60s hang)']])}</div>
       <div><label>Results</label>${sel('resultMode', [['normal', 'Send matching results'], ['none', 'Never call back'], ['status', 'Send a Status "Down" message']])}</div>
@@ -344,6 +348,12 @@ document.addEventListener('click', async (e) => {
 });
 $('#clear').onclick = () => api('DELETE', '/api/transactions');
 
+document.addEventListener('change', (e) => {
+  if (e.target.dataset?.s !== 'region') return;
+  const note = $('#region-note');
+  if (note) note.textContent = (S.regions.find((r) => r.id === e.target.value) || {}).note || '';
+});
+
 document.addEventListener('change', async (e) => {
   if (e.target.id !== 'csv-file' || !e.target.files[0]) return;
   const replace = confirm('Replace ALL existing records with this file?\n\nOK = replace everything\nCancel = add to (or update) existing records');
@@ -358,7 +368,7 @@ document.addEventListener('change', async (e) => {
 
 async function refreshState() {
   const st = await api('GET', '/api/state');
-  Object.assign(S, { settings: st.settings, records: st.records, txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
+  Object.assign(S, { settings: st.settings, regions: st.regions || [], records: st.records, txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
   S.settings.noRecordOnMiss = String(S.settings.noRecordOnMiss) === 'true' || S.settings.noRecordOnMiss === true;
 }
 

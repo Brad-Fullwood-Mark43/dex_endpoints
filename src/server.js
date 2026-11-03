@@ -9,6 +9,7 @@ import { buildRequestXml } from './requests.js';
 import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
 import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
+import { listRegions, isRegion } from './regions.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const API_KEY = process.env.API_KEY || '';
@@ -110,6 +111,7 @@ export function createApp() {
       transactions: listTransactions(),
       entityTypes: ENTITY_TYPES,
       matchKeys: MATCH_KEYS,
+      regions: listRegions(),
       config: { apiKeySet: !!API_KEY, adminPasswordSet: !!ADMIN_PASSWORD, receiverEnabled: !!RECEIVER_TOKEN, allowRequestResponseUrl: process.env.ALLOW_REQUEST_RESPONSE_URL === 'true' },
     }),
   );
@@ -141,7 +143,11 @@ export function createApp() {
     res.json({ ok: true });
   });
 
-  app.put('/api/settings', (req, res) => res.json(updateSettings(req.body ?? {})));
+  app.put('/api/settings', (req, res) => {
+    const patch = req.body ?? {};
+    if (patch.region !== undefined && !isRegion(patch.region)) return res.status(400).json({ error: `region must be one of ${listRegions().map((r) => r.id).join(', ')}` });
+    res.json(updateSettings(patch));
+  });
 
   app.post('/api/records', (req, res) => res.json(upsertRecord(req.body ?? {})));
   app.put('/api/records/:id', (req, res) => res.json(upsertRecord({ ...req.body, id: req.params.id })));
@@ -160,13 +166,14 @@ export function createApp() {
 
   // Send a test query through exactly the same pipeline a tenant request takes.
   app.post('/api/simulate', async (req, res) => {
-    const { entityType, fields, protocol = 'REST', auth } = req.body ?? {};
+    const { entityType, fields, protocol = 'REST', auth, region } = req.body ?? {};
+    if (region !== undefined && region !== '' && !isRegion(region)) return res.status(400).json({ error: 'unknown region' });
     if (!ENTITY_TYPES.includes(entityType)) return res.status(400).json({ error: 'entityType must be one of ' + ENTITY_TYPES.join(', ') });
     let rawBody = buildRequestXml({ entityType, fields, auth });
     if (protocol === 'SOAP') {
       rawBody = soapEnvelope(rawBody, 'SendMessage');
     }
-    const ackPromise = processRequest({ rawBody, headers: { 'content-type': protocol === 'SOAP' ? 'text/xml' : 'application/xml' }, path: '/api/simulate', origin: 'ui-test' });
+    const ackPromise = processRequest({ rawBody, headers: { 'content-type': protocol === 'SOAP' ? 'text/xml' : 'application/xml' }, path: '/api/simulate', origin: 'ui-test', region: region || null });
     // Respond once the transaction exists; the log updates over SSE.
     const existing = listTransactions()[0];
     res.json({ id: existing?.id });
