@@ -55,6 +55,16 @@ test('frame: noise, bad lengths and bad end markers are skipped and decoding res
   assert.ok(errors.length >= 2);
 });
 
+test('frame: bytes that contain no frame start are reported, and a frame split after a partial marker still decodes', () => {
+  const d = new FrameDecoder();
+  const first = d.push(Buffer.from('hello not a frame'));
+  assert.equal(first.frames.length, 0);
+  assert.match(first.errors[0], /discarded \d+ bytes with no frame start/);
+  const f = encodeFrame({ type: FrameType.ACK, ackId: 4 });
+  assert.equal(d.push(f.subarray(0, 2)).frames.length, 0);
+  assert.equal(d.push(f.subarray(2)).frames.length, 1);
+});
+
 test('frame: the decoder does not buffer without bound when no frame ever completes', () => {
   const d = new FrameDecoder();
   for (let i = 0; i < 50; i++) d.push(Buffer.alloc(100000, 1));

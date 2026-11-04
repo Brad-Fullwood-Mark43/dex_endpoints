@@ -59,7 +59,11 @@ export class FrameDecoder {
       const start = this.buf.indexOf(START);
       if (start === -1) {
         // Keep a possible partial start marker at the end; drop the rest.
-        if (this.buf.length > START.length - 1) this.buf = this.buf.subarray(this.buf.length - (START.length - 1));
+        const keep = START.length - 1;
+        if (this.buf.length > keep) {
+          errors.push(`discarded ${this.buf.length - keep} bytes with no frame start`);
+          this.buf = this.buf.subarray(this.buf.length - keep);
+        }
         break;
       }
       if (start > 0) {

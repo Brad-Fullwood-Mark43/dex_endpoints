@@ -51,7 +51,7 @@ The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` a
 | `PORT` | `3000` | Set by Railway. |
 | `TCP_PORT` | none (off) | Turns on the TCP listener on this port. See the TCP section. |
 | `TCP_HEARTBEAT_MS` | `30000` | Heartbeat interval; `0` disables. |
-| `TCP_ALLOWED_IPS` | none (open) | Comma-separated IPs allowed to connect. |
+| `TCP_ALLOWED_IPS` | none (open) | Comma-separated source IPs allowed to connect. Ineffective behind Railway's TCP Proxy (see the TCP section). |
 | `TCP_MAX_CONNECTIONS` | `10` | Connection cap. |
 | `TCP_RESULT_FORMAT` | `bare` | `envelope` wraps results in `ConnectCicApi`. |
 
@@ -72,8 +72,10 @@ the Commsys server.
 - Not supported: encryption (an encrypted frame is NAKed). The test tenant runs without a key.
 - Credentials (Password, UserName, UserAlias, ORI, OriginatingAgencyORI, SSN, Mnemonic) are masked in the call log, the
   database and the UI, and not echoed in results.
-- There is no authentication on this port. It only serves the synthetic records. `TCP_ALLOWED_IPS` (comma separated)
-  restricts who may connect; `TCP_MAX_CONNECTIONS` (default 10) caps connections.
+- There is no authentication on this port. It only serves the synthetic records. `TCP_MAX_CONNECTIONS` (default 10) caps
+  connections. `TCP_ALLOWED_IPS` (comma separated) compares against the socket's source address, but behind Railway's TCP Proxy
+  that address is the proxy's own (a changing `100.64.0.x`), not the caller's, so it cannot restrict callers there. It only
+  helps when the service is reached directly.
 - `TCP_RESULT_FORMAT=envelope` sends the results wrapped in `ConnectCicApi` instead of bare. Bare is what the agent's TCP
   reader parses for the query id; keep it unless a packet capture shows otherwise.
 

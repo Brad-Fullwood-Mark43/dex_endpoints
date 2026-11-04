@@ -202,7 +202,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       maxConnections: Number(process.env.TCP_MAX_CONNECTIONS) || 10,
       resultFormat: process.env.TCP_RESULT_FORMAT === 'envelope' ? 'envelope' : 'bare',
       log: (m) => console.log(m),
-    }).listen(tcpPort, '0.0.0.0', () => console.log(`  TCP listener     : :${tcpPort}  (ConnectCIC frames, no encryption, no auth${process.env.TCP_ALLOWED_IPS ? ', IP allowlist on' : ': set TCP_ALLOWED_IPS to restrict'})`));
+    }).listen(tcpPort, '0.0.0.0', () => console.log(`  TCP listener     : :${tcpPort}  (ConnectCIC frames, no encryption, no auth${process.env.TCP_ALLOWED_IPS ? ', IP allowlist on (not effective behind the Railway TCP proxy)' : ''})`));
   }
   createApp().listen(port, '0.0.0.0', () => {
     console.log(`dex_endpoints listening on :${port}  (storage: ${dbEnabled ? 'postgres' : 'file'})`);
