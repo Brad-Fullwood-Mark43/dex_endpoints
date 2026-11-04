@@ -16,8 +16,9 @@ Most work in this repo is **adjusting the responses** so they look like what a r
    agency data from an exemplar, a log, a ticket or a tenant. Copy the *shape* (field names, formats), invent the values.
 2. **No secrets in the repo.** No keys, passwords, tokens, webhook URLs or internal hostnames in code, tests,
    docs or commit messages. Configuration comes from environment variables (see the README).
-3. **Never log request or result contents.** The gateway and delivery steps log counts and status codes only.
-   Keep it that way (CJIS-style rule: no PII/CJI in logs, even synthetic, so the habit never slips).
+3. **Never log request or result contents.** The gateway, delivery steps and the TCP listener log counts, ids, entity types and status
+   only. Credentials in request bodies (Password, UserName, ORI, SSN, Mnemonic...) are masked by `src/mask.js` before they reach the call
+   log or database. Keep it that way (CJIS-style rule: no PII/CJI in logs, even synthetic, so the habit never slips).
 4. **The gateway fails closed.** `prismatic/gateway-step.cjs` refuses any query whose identifying value is not on
    the allowlist (built from the records) or whose field name is not permitted. Do not loosen that to make a test
    pass; add the record or field deliberately instead.
@@ -25,15 +26,27 @@ Most work in this repo is **adjusting the responses** so they look like what a r
 
 ## How a call flows
 
+Two ways in; both end in the same `processRequest` (`src/engine.js`), so records, regions, settings and the call log behave identically.
+
+**TCP (the live path).** The interface agent runs in TCP mode and connects to this service as a client:
+
 ```
-interface agent --POST ConnectCicApi XML--> Prismatic gateway (not in this repo's runtime; code in prismatic/)
+interface agent --TCP, ConnectCIC frames--> Railway TCP Proxy --> src/tcp-server.js (internal port TCP_PORT)
+   request frame (0x01) -> ACK frame (0x10, same ackId) -> one 0x01 result frame per result (bare LawEnforcementTransaction)
+   heartbeat: this service sends an empty 0x01 frame every TCP_HEARTBEAT_MS; each side ACKs the other's
+```
+
+**REST (older path, still deployed).** The agent POSTs ConnectCicApi XML:
+
+```
+interface agent --POST ConnectCicApi XML--> Prismatic gateway (code in prismatic/, not run from this repo)
    gateway: key check -> GET /allowlist -> rebuild a minimal request -> POST /resolve
    /resolve: match records -> build result XML (regions + derived fields) -> return ack + results as JSON
    gateway: returns the ack to the agent; a second flow POSTs each result to the agent's /v2/query-result
 ```
 
-`POST /connectcic` is the older direct path (the service answers the agent itself and posts callbacks). The
-gateway path (`/resolve`, `/allowlist`) is what deployments use. Both run the same `processRequest` in `src/engine.js`.
+`POST /connectcic` is the direct HTTP variant (this service answers and posts callbacks itself). The TCP path does not use
+Prismatic. The Prismatic gateway has an allowlist guard (rule 4); the TCP path has none and answers `NoRecord` for unknown values.
 
 ## Map of the code
 
@@ -67,6 +80,11 @@ gateway path (`/resolve`, `/allowlist`) is what deployments use. Both run the sa
 | Change a result's `MessageData` text | The record's `messageData` in `src/seed.js`. Today only the state code and `MOCKORI..` agency ids are region-swapped. |
 | Support a new query identifier or query type | `src/matcher.js` (`MATCH_KEYS`, `IDENTIFYING_KEYS`), `src/requests.js` (`MESSAGE_TYPE`), `src/csv-import.js` if it is a column, **and** the lists at the top of `prismatic/gateway-step.cjs`. A test fails if the gateway's identifying list drifts from `IDENTIFYING_KEYS`. |
 | Change what the gateway permits | Edit `prismatic/gateway-step.cjs`. **That code runs inside Prismatic**, not here: after merging, someone must paste it into the gateway step, publish a new integration version and upgrade the instance (see `prismatic/README.md`). |
+
+## Current state and open points
+
+Read `docs/HANDOFF.md` for the history and what is verified. Short version: the TCP path is deployed and answered a real query from a
+test tool through Railway's TCP Proxy. A real interface agent has not yet been confirmed end to end against it.
 
 ## What "real" looks like (sources of truth)
 
