@@ -18,10 +18,6 @@ export function restoreTransactions(list) {
   txns.splice(0, txns.length, ...list);
 }
 export const getTransaction = (id) => txns.find((t) => t.id === id);
-export function clearTransactions() {
-  txns.length = 0;
-  bus.emit('clear');
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clip = (s) => (typeof s === 'string' && s.length > MAX_BODY_LOG ? `${s.slice(0, MAX_BODY_LOG)}\n...[truncated]` : s);

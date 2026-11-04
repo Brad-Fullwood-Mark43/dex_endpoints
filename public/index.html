@@ -77,7 +77,7 @@
     <h1>Commsys Mock <span id="live" class="pill p-grey">CONNECTING</span> <span class="pill p-amber">SYNTHETIC DATA ONLY</span></h1>
     <div class="sub">Every call a tenant (or you) makes, what was sent, and the formatted response.</div>
   </div>
-  <div style="display:flex;gap:8px;align-items:center"><span class="muted" id="updated"></span><button id="clear">Clear log</button></div>
+  <div style="display:flex;gap:8px;align-items:center"><span class="muted" id="updated"></span></div>
 </header>
 <main>
   <div id="banners"></div>
@@ -346,7 +346,6 @@ document.addEventListener('click', async (e) => {
     await api('PUT', '/api/settings', patch); await refreshState(); renderBanners(); $('#set-msg').textContent = 'Saved';
   }
 });
-$('#clear').onclick = () => api('DELETE', '/api/transactions');
 
 document.addEventListener('change', (e) => {
   if (e.target.dataset?.s !== 'region') return;
@@ -377,7 +376,6 @@ function connect() {
   es.onopen = () => { $('#live').textContent = 'LIVE'; $('#live').className = 'pill p-green'; };
   es.onerror = () => { $('#live').textContent = 'RECONNECTING'; $('#live').className = 'pill p-amber'; };
   es.addEventListener('txn', (e) => upsertTxn(JSON.parse(e.data)));
-  es.addEventListener('clear', () => { S.txns = []; renderCalls(); });
 }
 
 (async () => { await refreshState(); renderBanners(); renderCalls(); connect(); })();

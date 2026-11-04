@@ -2,8 +2,8 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { processRequest, recordCallback, listTransactions, getTransaction, clearTransactions, redeliver, restoreTransactions, bus } from './engine.js';
-import { dbEnabled, initDb, loadCalls, saveCall, clearCalls } from './db.js';
+import { processRequest, recordCallback, listTransactions, getTransaction, redeliver, restoreTransactions, bus } from './engine.js';
+import { dbEnabled, initDb, loadCalls, saveCall } from './db.js';
 import { records, settings, upsertRecord, deleteRecord, resetRecords, importRecords, updateSettings, initStore } from './store.js';
 import { buildRequestXml } from './requests.js';
 import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
@@ -122,20 +122,12 @@ export function createApp() {
     res.flushHeaders();
     const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     const onTxn = (t) => send('txn', t);
-    const onClear = () => send('clear', {});
     bus.on('txn', onTxn);
-    bus.on('clear', onClear);
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
     req.on('close', () => {
       clearInterval(ping);
       bus.off('txn', onTxn);
-      bus.off('clear', onClear);
     });
-  });
-
-  app.delete('/api/transactions', (_req, res) => {
-    clearTransactions();
-    res.json({ ok: true });
   });
 
   app.post('/api/transactions/:id/redeliver', async (req, res) => {
@@ -191,7 +183,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (dbEnabled) {
     restoreTransactions(await loadCalls());
     bus.on('txn', saveCall);
-    bus.on('clear', clearCalls);
   }
   const tcpPort = Number(process.env.TCP_PORT) || 0;
   if (tcpPort) {

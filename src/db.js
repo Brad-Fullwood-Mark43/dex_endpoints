@@ -49,9 +49,3 @@ export function saveCall(txn) {
     }, 250),
   );
 }
-
-export function clearCalls() {
-  for (const t of timers.values()) clearTimeout(t);
-  timers.clear();
-  pool.query('DELETE FROM calls').catch((err) => warn('clear calls', err));
-}
