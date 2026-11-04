@@ -49,6 +49,38 @@ The UI and `/api/*` use HTTP Basic auth with any username and `ADMIN_PASSWORD` a
 | `DATABASE_URL` | none | Postgres connection string. When set, records, settings and the call log (last 300) persist there. Railway sets this when you reference the Postgres service. Set `PGSSL=true` if the database requires TLS. |
 | `DATA_DIR` | `./data` | Used only when `DATABASE_URL` is not set: records and settings persist to `store.json` here (the call log is then in memory only). |
 | `PORT` | `3000` | Set by Railway. |
+| `TCP_PORT` | none (off) | Turns on the TCP listener on this port. See the TCP section. |
+| `TCP_HEARTBEAT_MS` | `30000` | Heartbeat interval; `0` disables. |
+| `TCP_ALLOWED_IPS` | none (open) | Comma-separated IPs allowed to connect. |
+| `TCP_MAX_CONNECTIONS` | `10` | Connection cap. |
+| `TCP_RESULT_FORMAT` | `bare` | `envelope` wraps results in `ConnectCicApi`. |
+
+## TCP listener (interface agent TCP mode)
+
+Set `TCP_PORT` (for example `4500`) and the service also listens for ConnectCIC TCP frames, the transport the
+interface agent's TCP mode (and legacy DEx) uses. The agent is the client and connects to this port; this service is
+the Commsys server.
+
+- Frame: `5A F0 C3 0F`, 4-byte total length, 8-byte header (header length, ackId, type, reserved), XML body, `C3 0F 5A F0`.
+  Code: `src/tcp-frame.js`, taken from the DEx and agent frame classes.
+- A request frame (type `0x01`) is answered with an ACK frame (`0x10`, same ackId), then each result is sent as its own
+  `0x01` frame holding a bare `<LawEnforcementTransaction>` with `Response/Request/Id` echoing the request id. The agent
+  ACKs those. Both a bare request and the `ConnectCicApi` envelope are accepted (`src/tcp-adapter.js`).
+- This service sends an empty ack-required frame every `TCP_HEARTBEAT_MS` (default 30000, `0` = off) and ACKs the agent's.
+- The same records, region, and Settings (ack mode, result mode, delays) apply. Ack mode `http503` or `soapFault` sends a
+  NAK, `timeout` sends nothing. Calls show in the web UI with protocol `TCP`.
+- Not supported: encryption (an encrypted frame is NAKed). The test tenant runs without a key.
+- Credentials (Password, UserName, UserAlias, ORI, OriginatingAgencyORI, SSN, Mnemonic) are masked in the call log, the
+  database and the UI, and not echoed in results.
+- There is no authentication on this port. It only serves the synthetic records. `TCP_ALLOWED_IPS` (comma separated)
+  restricts who may connect; `TCP_MAX_CONNECTIONS` (default 10) caps connections.
+- `TCP_RESULT_FORMAT=envelope` sends the results wrapped in `ConnectCicApi` instead of bare. Bare is what the agent's TCP
+  reader parses for the query id; keep it unless a packet capture shows otherwise.
+
+On Railway: enable TCP Proxy for the service with internal port `4500` (Settings, Networking). Railway assigns a public
+`<name>.proxy.rlwy.net:<port>`; give that host and port to the agent's `tcp-connections` entry. Deploys cut open TCP
+connections, so the agent must reconnect. Check the proxy without an agent:
+`node scripts/tcp-client.mjs <host> <port>`.
 
 ## Spreadsheet import
 
@@ -121,5 +153,7 @@ PORT=3000 npm start
 
 - Built from the interface agent's and Federated Search's code and test fixtures, not from a live Commsys.
   Real Commsys behaviour (auth scheme, segmenting, interface-specific `MessageData` formats) may differ.
-- The legacy DEx path is a different protocol (a framed TCP socket with XML bodies) and is not included.
+- The TCP listener is built from the DEx and agent frame code, not from a packet capture of a real agent. The exact request
+  bytes (bare or enveloped), heartbeat interval and result framing still need confirming against a capture.
+- The legacy DEx path uses the same frame transport; its request and response XML are not modelled separately.
 - Without `DATABASE_URL` the call log is in memory only (last 300 calls). Calls that were mid-delivery when the server restarted keep their last recorded state.

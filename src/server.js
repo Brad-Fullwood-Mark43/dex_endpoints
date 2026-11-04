@@ -10,6 +10,7 @@ import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
 import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
+import { createTcpServer } from './tcp-server.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const API_KEY = process.env.API_KEY || '';
@@ -191,6 +192,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     restoreTransactions(await loadCalls());
     bus.on('txn', saveCall);
     bus.on('clear', clearCalls);
+  }
+  const tcpPort = Number(process.env.TCP_PORT) || 0;
+  if (tcpPort) {
+    // Counts only; request and result contents are never logged.
+    createTcpServer({
+      heartbeatMs: process.env.TCP_HEARTBEAT_MS === undefined ? 30000 : Number(process.env.TCP_HEARTBEAT_MS),
+      allowIps: (process.env.TCP_ALLOWED_IPS || '').split(',').map((s) => s.trim()).filter(Boolean),
+      maxConnections: Number(process.env.TCP_MAX_CONNECTIONS) || 10,
+      resultFormat: process.env.TCP_RESULT_FORMAT === 'envelope' ? 'envelope' : 'bare',
+      log: (m) => console.log(m),
+    }).listen(tcpPort, '0.0.0.0', () => console.log(`  TCP listener     : :${tcpPort}  (ConnectCIC frames, no encryption, no auth${process.env.TCP_ALLOWED_IPS ? ', IP allowlist on' : ': set TCP_ALLOWED_IPS to restrict'})`));
   }
   createApp().listen(port, '0.0.0.0', () => {
     console.log(`dex_endpoints listening on :${port}  (storage: ${dbEnabled ? 'postgres' : 'file'})`);

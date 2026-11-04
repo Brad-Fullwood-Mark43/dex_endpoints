@@ -5,6 +5,7 @@ import { entityTypeOf, findRecords, noRecordResult } from './matcher.js';
 import { withDerivedFields } from './normalize.js';
 import { applyRegion, isRegion, DEFAULT_REGION } from './regions.js';
 import { records, settings } from './store.js';
+import { maskCredentials } from './mask.js';
 
 const MAX_TXNS = 300;
 const MAX_BODY_LOG = 20000;
@@ -43,7 +44,7 @@ function redactHeaders(headers = {}) {
  * The whole mock-Commsys request lifecycle. Returns the HTTP response to send back immediately
  * (after any configured ack delay); result callbacks are delivered in the background.
  */
-export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant', deliver = true, onTxn = null, region = null }) {
+export async function processRequest({ rawBody, headers = {}, path = '/connectcic', origin = 'tenant', deliver = true, onTxn = null, region = null, loggedBody = null, protocol = null, maskAuth = false }) {
   const cfg = settings();
   const soap = isSoap(rawBody);
   const regionId = region && isRegion(region) ? region : isRegion(cfg.region) ? cfg.region : DEFAULT_REGION;
@@ -52,10 +53,11 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
     ts: new Date().toISOString(),
     origin,
     region: regionId,
-    protocol: soap ? 'SOAP' : 'REST',
+    protocol: protocol ?? (soap ? 'SOAP' : 'REST'),
     path,
     headers: redactHeaders(headers),
-    sent: clip(rawBody),
+    // What the caller sent (loggedBody when rawBody was converted at the edge), with credentials masked.
+    sent: clip(maskCredentials(loggedBody ?? rawBody)),
     requestXml: null,
     queries: [],
     ack: null,
@@ -77,8 +79,10 @@ export async function processRequest({ rawBody, headers = {}, path = '/connectci
       xml = un.xml;
       responseUrl = un.responseUrl;
     }
-    txn.requestXml = xml;
+    txn.requestXml = maskCredentials(loggedBody ?? xml);
     parsed = parseRequest(xml);
+    // Direct (TCP) callers: do not echo or keep the caller's identity in results or in the call log.
+    if (maskAuth) for (const t of parsed.transactions) t.auth = { ...t.auth, mnemonic: null, ori: null, userName: null };
   } catch (err) {
     return finishAck(txn, soap, {
       httpStatus: 400,

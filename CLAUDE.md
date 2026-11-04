@@ -47,7 +47,9 @@ gateway path (`/resolve`, `/allowlist`) is what deployments use. Both run the sa
 | `src/engine.js` | The request lifecycle, the call log, delivery, the callback receiver. |
 | `src/csv-import.js` | Spreadsheet import (one row = one result; rows sharing `record_name` merge). |
 | `src/store.js`, `src/db.js` | Persistence: Postgres when `DATABASE_URL` is set, otherwise a JSON file. Seed upgrades. |
-| `src/server.js` | HTTP routes, auth, the admin API. |
+| `src/server.js` | HTTP routes, auth, the admin API; starts the TCP listener when `TCP_PORT` is set. |
+| `src/tcp-server.js`, `src/tcp-frame.js`, `src/tcp-adapter.js` | The ConnectCIC TCP listener: frame codec, bare-vs-envelope conversion, per-connection ACK/heartbeat/result delivery. See README. |
+| `src/mask.js` | Masks credentials in request bodies before they reach the call log, database or UI. Keep new request paths going through it. |
 | `public/index.html` | The whole web UI (one file, no build step). |
 | `prismatic/` | The two Prismatic Code steps (gateway, delivery) and their build guide. |
 | `scripts/check-fidelity.mjs` | Measures our results against the real Federated Search source. |
