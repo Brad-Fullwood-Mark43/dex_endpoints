@@ -38,11 +38,20 @@ export function splitName(raw) {
   return { last: norm(parts[0]), first: norm(parts[1]) };
 }
 
+function sameName(a, b) {
+  if (!a.last || a.last !== b.last) return false;
+  return !a.first || !b.first || a.first === b.first || b.first.startsWith(a.first) || a.first.startsWith(b.first);
+}
+
+/**
+ * "DOE, JANE" is unambiguous. Without a comma the order is not: Federated Search sends "JANE DOE"
+ * (first last) while exemplar queries use "DOE JANE", so a comma-less name matches in either order.
+ */
 function nameMatches(requestName, recordName) {
   const a = splitName(requestName);
   const b = splitName(recordName);
-  if (!a.last || a.last !== b.last) return false;
-  return !a.first || !b.first || a.first === b.first || b.first.startsWith(a.first) || a.first.startsWith(b.first);
+  if (sameName(a, b)) return true;
+  return !String(requestName).includes(',') && sameName({ last: a.first, first: a.last }, b);
 }
 
 /**
