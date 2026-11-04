@@ -7,7 +7,8 @@ import { dbEnabled, loadKv, saveKv } from './db.js';
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const FILE = path.join(DATA_DIR, 'store.json');
 
-let state = { records: structuredClone(SEED_RECORDS), settings: { ...DEFAULT_SETTINGS }, seedVersion: SEED_VERSION };
+// replays: captured, scrubbed reply sets per USx region (docs/REPLAY.md); never seeded, only uploaded
+let state = { records: structuredClone(SEED_RECORDS), settings: { ...DEFAULT_SETTINGS }, seedVersion: SEED_VERSION, replays: [] };
 
 /**
  * When the seed set changes (SEED_VERSION in seed.js), refresh the seed records (ids starting with
@@ -29,6 +30,7 @@ function load() {
       records: Array.isArray(saved.records) ? saved.records : state.records,
       settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
       seedVersion: saved.seedVersion,
+      replays: Array.isArray(saved.replays) ? saved.replays : [],
     };
     if (applySeedUpgrade()) save();
   } catch {
@@ -40,7 +42,8 @@ function load() {
 /** With a database configured, records and settings live there; otherwise in a JSON file under DATA_DIR. */
 export async function initStore() {
   if (!dbEnabled) return;
-  const [records, savedSettings, seedVersion] = await Promise.all([loadKv('records'), loadKv('settings'), loadKv('seedVersion')]);
+  const [records, savedSettings, seedVersion, savedReplays] = await Promise.all([loadKv('records'), loadKv('settings'), loadKv('seedVersion'), loadKv('replays')]);
+  state.replays = Array.isArray(savedReplays) ? savedReplays : [];
   if (Array.isArray(records)) {
     state.records = records;
     state.seedVersion = seedVersion ?? undefined;
@@ -55,6 +58,7 @@ function save() {
     saveKv('records', state.records);
     saveKv('settings', state.settings);
     saveKv('seedVersion', state.seedVersion);
+    saveKv('replays', state.replays);
     return;
   }
   try {
@@ -69,6 +73,22 @@ load();
 
 export const records = () => state.records;
 export const settings = () => state.settings;
+export const replays = () => state.replays;
+
+/** Replaces one region's replay records with a validated pack's records; other regions are kept. */
+export function setRegionReplays(region, list) {
+  state.replays = [...state.replays.filter((r) => r.region !== region), ...list];
+  save();
+  return state.replays.filter((r) => r.region === region).length;
+}
+
+/** Removes one region's replay records. */
+export function clearRegionReplays(region) {
+  const before = state.replays.length;
+  state.replays = state.replays.filter((r) => r.region !== region);
+  save();
+  return before - state.replays.length;
+}
 
 export function upsertRecord(input) {
   const record = { enabled: true, results: [], match: {}, ...input, id: input.id || randomUUID() };

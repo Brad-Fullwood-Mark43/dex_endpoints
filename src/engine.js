@@ -290,3 +290,49 @@ export async function redeliver(id) {
   await deliverResults(txn);
   return txn;
 }
+
+/**
+ * Call-log entry for a replayed request (docs/REPLAY.md). `regionReason` says how the region was chosen ("ori" or
+ * "state"); the ORI itself stays masked like every other credential. `replay` is the matched record, or null when the
+ * region is certified but no captured reply set matches (nothing is sent: a certified region never falls back to
+ * generated results).
+ */
+export function recordReplay({ loggedBody, request, region, regionReason, replay }) {
+  const txn = {
+    id: randomUUID(),
+    ts: new Date().toISOString(),
+    origin: 'tcp',
+    region,
+    regionReason,
+    protocol: 'TCP',
+    path: 'tcp',
+    headers: {},
+    sent: clip(maskCredentials(loggedBody)),
+    requestXml: clip(maskCredentials(loggedBody)),
+    queries: [{ transactionId: request.id, requestId: request.id, entityType: replay?.entityType ?? null, messageType: request.messageType, auth: {}, fields: {} }],
+    ack: { httpStatus: 200, contentType: 'application/xml', body: '(ACK frame)' },
+    results: (replay?.replies ?? []).map((r) => {
+      const tag = (t) => (new RegExp(`<${t}>([^<]*)</${t}>`).exec(r.response) || [])[1] ?? '';
+      return {
+        requestId: request.id, recordId: replay.id, recordName: `${replay.match.kind} replay (${r.fullEnvelope ? 'full envelope' : 'message text only'})`,
+        class: tag('Class') || r.dataSource || '', hit: tag('Detected') === '1', system: tag('System') || r.dataSource || '',
+        messageType: tag('MessageType'), messageData: tag('MessageData'), fields: {}, xml: r.response,
+      };
+    }),
+    deliveries: [],
+    state: replay ? 'replaying' : 'no-capture',
+    replayId: replay?.id ?? null,
+  };
+  txns.unshift(txn);
+  if (txns.length > MAX_TXNS) txns.pop();
+  publish(txn);
+  return txn;
+}
+
+/** Marks one replayed frame as written to the socket (or failed). */
+export function recordReplayDelivery(txn, resultIndex, error = null) {
+  txn.deliveries.push({ ts: new Date().toISOString(), url: 'tcp', resultIndex, sent: null, status: error ? null : 200, response: error ? null : 'sent over TCP', error, ms: 0 });
+  if (error) txn.state = 'delivery-failed';
+  else if (txn.deliveries.length === txn.results.length) txn.state = 'delivered';
+  publish(txn);
+}

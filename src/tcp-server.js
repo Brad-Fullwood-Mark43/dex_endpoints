@@ -9,8 +9,9 @@
 // test tenant runs without a key); an encrypted frame is NAKed. There is no authentication on this port,
 // so it only ever serves the synthetic records, and TCP_ALLOWED_IPS can restrict who may connect.
 import net from 'node:net';
-import { processRequest, bus } from './engine.js';
-import { settings } from './store.js';
+import { processRequest, bus, recordReplay, recordReplayDelivery } from './engine.js';
+import { settings, replays } from './store.js';
+import { readRequest, regionForOri, findReplay, replayFrames } from './replay.js';
 import { FrameDecoder, FrameType, encodeFrame, isAckRequired, isEncrypted } from './tcp-frame.js';
 import { toEnvelope, toBareResult } from './tcp-adapter.js';
 
@@ -101,6 +102,30 @@ export function createTcpServer({ heartbeatMs = 30000, allowIps = [], maxConnect
       }
       counts.queries++;
       const loggedBody = frame.body.toString('utf8');
+      // Replay (docs/REPLAY.md): a request from a device whose ORI maps to a region with captured reply sets is answered
+      // only from those captures. No match in such a region: ACK and nothing else (never generated results).
+      const request = readRequest(loggedBody);
+      const map = settings().regionByOri || {};
+      const region = request ? regionForOri(request.ori, map) : null;
+      if (region && replays().some((r) => r.region === region)) {
+        const reason = map[String(request.ori || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] ? 'ori' : 'state';
+        const replay = findReplay(replays(), region, request);
+        const txn = recordReplay({ loggedBody, request, region, regionReason: reason, replay });
+        if (wantsAck) send({ type: FrameType.ACK, ackId: frame.ackId });
+        clog(`query received (request bytes=${frame.body.length} id=${request.id} region=${region} by ${reason}); ${replay ? `replaying ${replay.replies.length} captured repl${replay.replies.length === 1 ? 'y' : 'ies'} (${replay.id})` : 'no captured reply set matches, ACK only'}`);
+        if (replay) {
+          const frames = replayFrames(replay, request.id);
+          for (let i = 0; i < frames.length; i++) {
+            await sleep(frames[i].delayMs);
+            if (socket.destroyed) { recordReplayDelivery(txn, i, 'connection closed'); break; }
+            send({ type: FrameType.MESSAGE_ACK, ackId: nextAckId(), body: Buffer.from(frames[i].xml, 'utf8') });
+            counts.resultsSent++;
+            recordReplayDelivery(txn, i);
+          }
+          clog(`${frames.length} replayed frame(s) sent, state=${txn.state}`);
+        }
+        return;
+      }
       let rawBody = loggedBody;
       try {
         rawBody = toEnvelope(loggedBody);

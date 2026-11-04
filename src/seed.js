@@ -352,4 +352,6 @@ export const DEFAULT_SETTINGS = {
   noRecordOnMiss: true,
   // Which interface's wording results use (see src/regions.js). GENERIC = no regional quirks.
   region: 'GENERIC',
+  // Device ORI (exact, or a 2-letter state prefix) -> USx region, for replays (docs/REPLAY.md). Real ORIs go here only, never in code.
+  regionByOri: {},
 };

@@ -13,6 +13,7 @@
 //   --entity PERSON|VEHICLE|FIREARM|BOAT|ARTICLE   query type (default PERSON)
 //   --field Key=Value       request field, repeatable (default for PERSON: Name="DOE, JANE A", OperatorLicenseNumber=D0000001)
 //   --queries N             queries to send, one after another (default 1)
+//   --ori ORI               device ORI to send (default XX0000000); replayed regions are chosen from it
 //   --key 16CHARKEY         encrypt like COMMSYS_TCP_ENCRYPTION_KEY (exactly 16 characters, used as raw UTF-8)
 //   --wait SECONDS          how long to collect results after the last ACK (default 10)
 //   --idle SECONDS          stay connected this long with no queries, to check the link survives (default 0)
@@ -64,6 +65,7 @@ const waitMs = Number(opt('--wait', 10)) * 1000;
 const idleMs = Number(opt('--idle', 0)) * 1000;
 const heartbeatMs = Number(opt('--heartbeat', 30)) * 1000;
 const expect = opt('--expect', null) === null ? null : Number(opt('--expect'));
+const ORI = String(opt('--ori', 'XX0000000')).toUpperCase(); // the device ORI the agent would send (replay picks the region from it)
 const keyText = opt('--key', '');
 if (keyText && Buffer.byteLength(keyText, 'utf8') !== 16) { console.error('--key must be exactly 16 bytes (TcpProperties.encryptionKeyBytes)'); process.exit(2); }
 const key = keyText ? Buffer.from(keyText, 'utf8') : null;
@@ -146,7 +148,7 @@ function buildRequest(requestId) {
   // Authentication values are dummies; the real agent sends the device's real ones, including Password.
   const f = Object.entries(requestFields).map(([k, v]) => `<${k}>${esc(v)}</${k}>`).join('');
   return '<LawEnforcementTransaction version="1.0"><Session><Id>CONFORMANCE01</Id><Authentication>' +
-    '<UserName>TESTUSER</UserName><Password>DUMMYPASSWORD</Password><ORI>XX0000000</ORI><Mnemonic>MOCK</Mnemonic>' +
+    '<UserName>TESTUSER</UserName><Password>DUMMYPASSWORD</Password><ORI>' + esc(ORI) + '</ORI><Mnemonic>MOCK</Mnemonic>' +
     '<DeviceId>CONFORMANCE01</DeviceId><DeviceAlias>CONFORMANCE01</DeviceAlias></Authentication></Session>' +
     `<Transaction><Request><MessageType>${MESSAGE_TYPE[entity]}</MessageType>${f}<Id>${esc(requestId)}</Id></Request></Transaction></LawEnforcementTransaction>`;
 }

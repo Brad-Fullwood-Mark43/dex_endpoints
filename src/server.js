@@ -10,6 +10,8 @@ import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
 import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
+import { replays, setRegionReplays, clearRegionReplays } from './store.js';
+import { validatePack } from './replay.js';
 import { createTcpServer } from './tcp-server.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -138,10 +140,27 @@ export function createApp() {
 
   app.put('/api/settings', (req, res) => {
     const patch = req.body ?? {};
+    if (patch.regionByOri !== undefined) {
+      const m = patch.regionByOri;
+      const bad = !m || typeof m !== 'object' || Array.isArray(m) ? ['regionByOri must be an object'] :
+        Object.entries(m).filter(([k, v]) => !/^[A-Z]{2}([A-Z0-9]{7})?$/.test(k) || typeof v !== 'string' || !/^[A-Z]{2}_[A-Za-z0-9_]+$/.test(v)).map(([k]) => `bad entry ${k}`);
+      if (bad.length) return res.status(400).json({ error: `regionByOri: keys are a 9-character ORI or a 2-letter state, values a USx region name (${bad.join('; ')})` });
+    }
     if (patch.region !== undefined && !isRegion(patch.region)) return res.status(400).json({ error: `region must be one of ${listRegions().map((r) => r.id).join(', ')}` });
     res.json(updateSettings(patch));
   });
 
+  // Replay packs (docs/REPLAY.md): captured, scrubbed reply sets for one USx region. Upload replaces that region only.
+  app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length }))));
+  app.post('/api/replays', express.json({ limit: '20mb' }), (req, res) => {
+    const pack = req.body ?? {};
+    const problems = validatePack(pack);
+    const regions = [...new Set((pack.records || []).map((r) => r.region))];
+    if (regions.length !== 1) problems.push('a pack must hold exactly one region');
+    if (problems.length) return res.status(400).json({ error: 'invalid replay pack', problems: problems.slice(0, 20) });
+    res.json({ region: regions[0], stored: setRegionReplays(regions[0], pack.records) });
+  });
+  app.delete('/api/replays/:region', (req, res) => res.json({ region: req.params.region, removed: clearRegionReplays(req.params.region) }));
   app.post('/api/records', (req, res) => res.json(upsertRecord(req.body ?? {})));
   app.put('/api/records/:id', (req, res) => res.json(upsertRecord({ ...req.body, id: req.params.id })));
   app.delete('/api/records/:id', (req, res) => (deleteRecord(req.params.id) ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' })));
