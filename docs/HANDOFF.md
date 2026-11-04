@@ -34,6 +34,10 @@ The agent image must be new enough to have TCP mode. Agents on older tags never 
 
 ## Not verified yet
 
+> `docs/AGENT-TCP-CONTRACT.md` (2026-11-04) answers the request-bytes and heartbeat-timing items below from the agent's source,
+> notes that release `3000.30` lacks the TCP SUCCESS-status fix (`87a681e7`), and shows the request carries no DEx region (section 6b).
+> Check a listener with `node scripts/agent-conformance.mjs <host> <port>`.
+
 - Long-running behaviour of the agent connection (heartbeats over hours, behaviour under several departments).
 - The exact bytes the agent sends over TCP (bare or enveloped; both are accepted) and the heartbeat timing it expects. A packet
   capture of agent traffic would settle this.

@@ -80,9 +80,10 @@ the Commsys server.
   reader parses for the query id; keep it unless a packet capture shows otherwise.
 
 On Railway: enable TCP Proxy for the service with internal port `4500` (Settings, Networking). Railway assigns a public
-`<name>.proxy.rlwy.net:<port>`; give that host and port to the agent's `tcp-connections` entry. Deploys cut open TCP
+`<name>.proxy.rlwy.net:<port>`; give that host and port to the agent as `COMMSYS_TCP_HOST` / `COMMSYS_TCP_PORT`, with `COMMSYS_TCP_ENABLED=true` and `COMMSYS_TCP_ENCRYPTION_KEY` blank (see `docs/AGENT-TCP-CONTRACT.md`). Deploys cut open TCP
 connections, so the agent must reconnect. Check the proxy without an agent:
-`node scripts/tcp-client.mjs <host> <port>`.
+`node scripts/tcp-client.mjs <host> <port>`, or check it against the agent's full contract with
+`node scripts/agent-conformance.mjs <host> <port>` (requirements R1 to R12 in `docs/AGENT-TCP-CONTRACT.md`).
 
 ## Spreadsheet import
 

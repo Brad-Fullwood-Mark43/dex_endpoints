@@ -62,6 +62,7 @@ Prismatic. The Prismatic gateway has an allowlist guard (rule 4); the TCP path h
 | `src/store.js`, `src/db.js` | Persistence: Postgres when `DATABASE_URL` is set, otherwise a JSON file. Seed upgrades. |
 | `src/server.js` | HTTP routes, auth, the admin API; starts the TCP listener when `TCP_PORT` is set. |
 | `src/tcp-server.js`, `src/tcp-frame.js`, `src/tcp-adapter.js` | The ConnectCIC TCP listener: frame codec, bare-vs-envelope conversion, per-connection ACK/heartbeat/result delivery. See README. |
+| `docs/AGENT-TCP-CONTRACT.md`, `scripts/agent-conformance.mjs` | What the real interface agent requires of the TCP listener (from its source, with file references), and an independent agent stand-in that checks a running listener against it. Read before changing `src/tcp-*.js`. |
 | `src/mask.js` | Masks credentials in request bodies before they reach the call log, database or UI. Keep new request paths going through it. |
 | `public/index.html` | The whole web UI (one file, no build step). |
 | `prismatic/` | The two Prismatic Code steps (gateway, delivery) and their build guide. |
