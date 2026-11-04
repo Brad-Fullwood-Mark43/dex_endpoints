@@ -27,12 +27,14 @@ The agent image must be new enough to have TCP mode. Agents on older tags never 
 - A test client reached the service through Railway's TCP Proxy from a network that allows the port, got an ACK and a result frame.
 - A query from a Mark43 test tool, sent as the `ConnectCicApi` envelope, returned a result through the proxy.
 - The web UI shows TCP calls (protocol `TCP`) with credentials masked.
+- **End to end with a real interface agent:** a test department's agent, running a TCP-capable image and pointed at the Railway proxy,
+  returned mock results to a tenant. A person query appeared in the tenant's DEx view with the mock's driver-license response (the
+  parsing prototype listed the labels it did not recognise in our message text). This confirms the agent connects, the bare
+  `LawEnforcementTransaction` result is accepted by Federated Search, and the tenant renders it.
 
 ## Not verified yet
 
-- A real interface agent staying connected, exchanging heartbeats and showing results in a tenant's Universal Search.
-- Whether Federated Search accepts a bare `LawEnforcementTransaction` result as stored result content. If it does not, set
-  `TCP_RESULT_FORMAT=envelope`.
+- Long-running behaviour of the agent connection (heartbeats over hours, behaviour under several departments).
 - The exact bytes the agent sends over TCP (bare or enveloped; both are accepted) and the heartbeat timing it expects. A packet
   capture of agent traffic would settle this.
 - Reconnect after a Railway redeploy (deploys cut open TCP connections; the agent is expected to retry).
@@ -54,12 +56,11 @@ The agent image must be new enough to have TCP mode. Agents on older tags never 
 
 ## Next steps
 
-1. Confirm a real agent connects: look for `tcp #n <ip>: opened` and `query received (...)` lines in the service's deploy logs.
-2. Run a Universal Search for a seeded record in the test tenant; check the call log and the tenant's result display. Check the
-   agent's own log for `TCP connection established`.
-3. Capture agent traffic to settle the open questions above; adjust `src/tcp-adapter.js` / `TCP_RESULT_FORMAT` if needed.
-4. Add the regions and records the team needs (Texas TLETS first if the test tenant is TX).
-5. Optional: fix the TCP labels in `public/index.html`; add an application-level check if the port needs restricting.
+1. Work the parsing: load realistic (anonymised) result text and fields, and watch how the tenant renders and parses each one. The
+   tenant's parser already flags message-text labels it does not know, which is a good source of work.
+2. Add the regions and records the team needs (Texas TLETS first if the test tenant is TX).
+3. Optional: capture agent traffic to confirm the exact request bytes and heartbeat timing; adjust `src/tcp-adapter.js` if needed.
+4. Optional: fix the TCP labels in `public/index.html`; add an application-level check if the port needs restricting.
 
 ## Working in this repo
 
