@@ -65,7 +65,9 @@ Either upload maps the pack's `testOri` to its region when that ORI isn't mapped
 changed). The replay routes accept up to 25 MB (photos); the rest of `/api` keeps its 2 MB limit.
 
 The Records tab lists replays in their own section per region, below the synthetic records, with kind, state, reply count,
-photo, envelope (full / text only) and EDITED tags. The editor is the same JSON editor; blurred photos show as a placeholder
+photo, envelope (full / text only) and EDITED tags, and a red HIT tag after the state when any reply has
+<Hit><Detected>1</Detected></Hit> (`replayHasHit` in `src/replay.js`, worked out on every listing, so uploads, imports and edits
+are always reflected; text-only replies have no envelope and never count). The editor is the same JSON editor; blurred photos show as a placeholder
 and are put back on save. An edited record is no longer exactly as captured, hence the tag. Uploading the region's pack
 again replaces its records, edits included.
 
