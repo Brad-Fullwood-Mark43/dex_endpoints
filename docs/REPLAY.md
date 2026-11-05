@@ -20,8 +20,9 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
                                yes -> findReplay(): the best matching record in that region
                                         match    -> ACK, then each captured <Response> as its own frame, at its captured spacing,
                                                     Request/Id set to the incoming id (replayFrames)
-                                        no match -> ACK only, logged "no-capture" (a certified region never falls back to
-                                                    generated results)
+                                        no match -> ACK, then the query catalog (below) headed "NO TEST RECORD MATCHES
+                                                    THIS QUERY", call log replay id catalog-<region>-no-match, noMatch true
+                                                    (a certified region never falls back to generated results)
 ```
 
 - **Region:** `settings.regionByOri` maps a device ORI (exact, 9 characters) or a 2-letter state prefix to a USx region name
@@ -50,7 +51,8 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
 A vehicle plate query for `X1X1` (any state, case and spaces ignored) from a device whose ORI maps to a region (see
 `regionByOri`) is not matched against the records. Instead it gets one reply listing every query that region can answer:
 OLN, name / DOB, plate and VIN sections, one line per distinct query, with the State to send (`TX or blank` = in-state),
-the number of replies and `HIT` when a reply carries `<Detected>1</Detected>`. Testers search X1X1 to see what to search.
+the number of replies and `HIT` when a reply carries `<Detected>1</Detected>`. Testers search X1X1 to see what to search. A query that matches no record in the region gets the same list, headed
+"NO TEST RECORD MATCHES THIS QUERY" (entity PERSON or VEHICLE from the request's fields).
 
 - The reply uses one of the region's own captured full envelopes (a neutral `Response` / `Accept` class first, never a
   data class), with the list as `MessageData`, `<System>Mark43 TEST DATA Response</System>` (the source label USx shows),
@@ -111,7 +113,8 @@ Stored like records: Postgres `kv` key `replays`, or `store.json` without a data
    `XX_TEST` (one OLN record with two replies, built like the fixtures in `test/replay.test.js`).
 3. `node scripts/agent-conformance.mjs 127.0.0.1 4500 --ori XX1000001 --field OperatorLicenseNumber=<the record's OLN> --expect 2`. Expect R1–R10 PASS, the two
    replies in order, and the call log showing protocol TCP, region `XX_TEST` by `ori`, state `delivered`.
-4. Same, with an OLN not in the pack: ACK only, call log state `no-capture`, R7 fails as expected (`--expect 0` passes).
+4. Same, with an OLN not in the pack: one reply, the query catalog headed "NO TEST RECORD MATCHES THIS QUERY" (`--expect 1`),
+   call log replay id `catalog-xx_test-no-match`, `noMatch: true`.
 5. A request whose ORI isn't in `regionByOri`: the old pipeline answers, exactly as before.
 6. Suggested test to add: the above as a `node:test` case against `createTcpServer()` on port 0 with an in-memory store.
 

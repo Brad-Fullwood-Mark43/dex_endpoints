@@ -183,7 +183,7 @@ const xmlText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const mdy = (v) => { const d = ymd(v); return /^\d{8}$/.test(d) ? `${d.slice(4, 6)}/${d.slice(6)}/${d.slice(0, 4)}` : String(v ?? ''); };
 
 /** The catalog text: one section per query kind, one line per distinct query, in the order a tester would type them. */
-export function catalogText(replays, region) {
+export function catalogText(replays, region, { noMatch = false } = {}) {
   const home = region.slice(0, 2);
   const recs = replays.filter((r) => r.region === region && r.certified !== false);
   const where = (s) => (!up(s) || up(s) === home ? `State ${home} or blank` : `State ${up(s)}`);
@@ -194,7 +194,7 @@ export function catalogText(replays, region) {
     ['PLATE', 'VEHICLE BY PLATE', (m) => `Plate ${up(m.LicensePlateNumber)}  ${where(m.State)}`],
     ['VIN', 'VEHICLE BY VIN', (m) => `VIN ${up(m.VehicleIdentificationNumber)}`],
   ];
-  const out = [`RAILWAY TEST QUERIES - ${region}`, `${recs.length} captured quer${recs.length === 1 ? 'y' : 'ies'}. Search one of these from a device whose ORI maps to ${region}.`];
+  const out = [...(noMatch ? ['NO TEST RECORD MATCHES THIS QUERY.', 'Search one of the queries below instead (check spelling, DOB, sex and state).', ''] : []), `RAILWAY TEST QUERIES - ${region}`, `${recs.length} captured quer${recs.length === 1 ? 'y' : 'ies'}. Search one of these from a device whose ORI maps to ${region}.`];
   if (!recs.length) out.push('', 'No replay records are loaded for this region yet.');
   for (const [kind, title, line] of kinds) {
     const lines = new Map();
@@ -215,7 +215,17 @@ export function catalogText(replays, region) {
  * parses that region), with the catalog as MessageData, no hit and no image. A region with no captured envelope gets
  * the plain envelope the captures share.
  */
-export function catalogRecord(replays, region) {
+/** PERSON for an OLN or name query, VEHICLE for a plate or VIN query (the call log's entity column). */
+export function requestEntityType(request) {
+  const f = request?.fields || {};
+  return f.OperatorLicenseNumber || f.Name || f.NameLast || f.NameFirst ? 'PERSON' : 'VEHICLE';
+}
+
+/**
+ * `noMatch`: the request matched no record, so the catalog is sent with a "no test record matches" line on top (instead
+ * of an ACK alone), logged as entity `entityType` and replay id `catalog-<region>-no-match`.
+ */
+export function catalogRecord(replays, region, { noMatch = false, entityType = 'VEHICLE' } = {}) {
   const plain = (r) => r.fullEnvelope && /<MessageData>/.test(r.response || '') && !/<(LicensePlateNumber|Name|OperatorLicenseNumber|VehicleIdentificationNumber)>/.test(r.response);
   const all = replays.filter((r) => r.region === region).flatMap((r) => r.replies || []);
   // Prefer a neutral message class (TX_TLETS Nlets "Response", LA_LEMS OSW "Accept"); NoRecord or Unknown could make
@@ -224,7 +234,7 @@ export function catalogRecord(replays, region) {
   const template = all.find((r) => plain(r) && /^(Response|Accept)$/.test(cls(r)))
     || all.find((r) => plain(r) && !/^(NoRecord|Unknown)$/.test(cls(r))) || all.find(plain)
     || all.find((r) => r.fullEnvelope && /<MessageData>/.test(r.response || ''));
-  const text = xmlText(catalogText(replays, region));
+  const text = xmlText(catalogText(replays, region, { noMatch }));
   const response = template
     ? template.response
       .replace(/<MessageData>[\s\S]*?<\/MessageData>/, `<MessageData>${text}</MessageData>`)
@@ -232,6 +242,6 @@ export function catalogRecord(replays, region) {
       .replace(/<Image>[\s\S]*?<\/Image>/, '<Image/>')
       .replace(/<System>[^<]*<\/System>/, `<System>${CATALOG_SYSTEM}</System>`)
     : `<Response><Class>Accept</Class><CurrentDataBlock>1</CurrentDataBlock><Hit><Details></Details><Detected>0</Detected></Hit><Image/><MessageData>${text}</MessageData><Request><Id></Id></Request><System>${CATALOG_SYSTEM}</System></Response>`;
-  return { id: `catalog-${region.toLowerCase()}`, type: 'replay', region, certified: true, entityType: 'VEHICLE',
-    match: { kind: 'CATALOG', LicensePlateNumber: CATALOG_PLATE }, replies: [{ offsetMs: 500, dataSource: CATALOG_SYSTEM, fullEnvelope: true, response }] };
+  return { id: `catalog-${region.toLowerCase()}${noMatch ? '-no-match' : ''}`, type: 'replay', region, certified: true, entityType, noMatch,
+    match: noMatch ? { kind: 'CATALOG (no match)' } : { kind: 'CATALOG', LicensePlateNumber: CATALOG_PLATE }, replies: [{ offsetMs: 500, dataSource: CATALOG_SYSTEM, fullEnvelope: true, response }] };
 }

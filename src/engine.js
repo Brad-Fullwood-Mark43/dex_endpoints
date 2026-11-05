@@ -294,7 +294,7 @@ export async function redeliver(id) {
 /**
  * Call-log entry for a replayed request (docs/REPLAY.md). `regionReason` says how the region was chosen ("ori" or
  * "state"); the ORI itself stays masked like every other credential. `replay` is the matched record, or null when the
- * region is certified but no captured reply set matches (nothing is sent: a certified region never falls back to
+ * region is certified but no captured reply set matches (the TCP path now sends the query catalog instead, `noMatch`; a certified region never falls back to
  * generated results).
  */
 export function recordReplay({ loggedBody, request, region, regionReason, replay }) {
@@ -322,6 +322,7 @@ export function recordReplay({ loggedBody, request, region, regionReason, replay
     deliveries: [],
     state: replay ? 'replaying' : 'no-capture',
     replayId: replay?.id ?? null,
+    noMatch: !!replay?.noMatch,
   };
   txns.unshift(txn);
   if (txns.length > MAX_TXNS) txns.pop();

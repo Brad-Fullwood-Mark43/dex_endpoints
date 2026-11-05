@@ -11,7 +11,7 @@
 import net from 'node:net';
 import { processRequest, bus, recordReplay, recordReplayDelivery } from './engine.js';
 import { settings, replays } from './store.js';
-import { readRequest, regionForOri, findReplay, replayFrames, isCatalogRequest, catalogRecord } from './replay.js';
+import { readRequest, regionForOri, findReplay, replayFrames, isCatalogRequest, catalogRecord, requestEntityType } from './replay.js';
 import { FrameDecoder, FrameType, encodeFrame, isAckRequired, isEncrypted } from './tcp-frame.js';
 import { toEnvelope, toBareResult } from './tcp-adapter.js';
 
@@ -103,7 +103,8 @@ export function createTcpServer({ heartbeatMs = 30000, allowIps = [], maxConnect
       counts.queries++;
       const loggedBody = frame.body.toString('utf8');
       // Replay (docs/REPLAY.md): a request from a device whose ORI maps to a region with captured reply sets is answered
-      // only from those captures. No match in such a region: ACK and nothing else (never generated results).
+      // only from those captures. No match in such a region: the query catalog with a "no test record matches" line (never
+      // generated results).
       const request = readRequest(loggedBody);
       const map = settings().regionByOri || {};
       const region = request ? regionForOri(request.ori, map) : null;
@@ -111,10 +112,11 @@ export function createTcpServer({ heartbeatMs = 30000, allowIps = [], maxConnect
       const catalog = region && isCatalogRequest(request);
       if (region && (catalog || replays().some((r) => r.region === region))) {
         const reason = map[String(request.ori || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] ? 'ori' : 'state';
-        const replay = catalog ? catalogRecord(replays(), region) : findReplay(replays(), region, request);
+        const replay = catalog ? catalogRecord(replays(), region)
+          : findReplay(replays(), region, request) || catalogRecord(replays(), region, { noMatch: true, entityType: requestEntityType(request) });
         const txn = recordReplay({ loggedBody, request, region, regionReason: reason, replay });
         if (wantsAck) send({ type: FrameType.ACK, ackId: frame.ackId });
-        clog(`query received (request bytes=${frame.body.length} id=${request.id} region=${region} by ${reason}); ${catalog ? 'query catalog requested, ' : ''}${replay ? `replaying ${replay.replies.length} captured repl${replay.replies.length === 1 ? 'y' : 'ies'} (${replay.id})` : 'no captured reply set matches, ACK only'}`);
+        clog(`query received (request bytes=${frame.body.length} id=${request.id} region=${region} by ${reason}); ${catalog ? 'query catalog requested, ' : replay.noMatch ? 'no captured reply set matches, sending the query catalog, ' : ''}${replay ? `replaying ${replay.replies.length} captured repl${replay.replies.length === 1 ? 'y' : 'ies'} (${replay.id})` : 'no captured reply set matches, ACK only'}`);
         if (replay) {
           const frames = replayFrames(replay, request.id);
           for (let i = 0; i < frames.length; i++) {

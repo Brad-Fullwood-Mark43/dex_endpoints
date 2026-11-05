@@ -1,7 +1,7 @@
 // Replay matching and frame building (src/replay.js). Synthetic fixtures only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack, replayHasHit, isCatalogRequest, catalogText, catalogRecord } from '../src/replay.js';
+import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack, replayHasHit, isCatalogRequest, catalogText, catalogRecord, requestEntityType } from '../src/replay.js';
 
 const req = (fields, { id = '01ABCDEFGHJKMNPQRSTVWXYZ00', ori = 'XX1000001', type = 'DriverLicenseQuery' } = {}) =>
   `<LawEnforcementTransaction version="1.0"><Session><Id>DEV01</Id><Authentication><UserName>TESTUSER</UserName><ORI>${ori}</ORI></Authentication></Session>` +
@@ -168,4 +168,16 @@ test('a NAME_DOB record without SexCode is accepted and listed as any sex; the c
   const env = [{ offsetMs: 1, fullEnvelope: true, response: '<Response><Class>Response</Class><MessageData>T</MessageData><Request><Id>A</Id></Request><System>Nlets</System></Response>' }];
   assert.match(catalogRecord([rec({ kind: 'OLN', OperatorLicenseNumber: 'T1', State: null }, env)], 'XX_TEST').replies[0].response, /<System>Mark43 TEST DATA Response<\/System>/);
   assert.match(catalogRecord([], 'XX_TEST').replies[0].response, /<System>Mark43 TEST DATA Response<\/System>/);
+});
+
+test('no match: the catalog goes out headed "no test record matches", logged with the request entity', () => {
+  const recs = [rec({ kind: 'OLN', OperatorLicenseNumber: 'T1234567', State: null })];
+  assert.match(catalogText(recs, 'XX_TEST', { noMatch: true }), /^NO TEST RECORD MATCHES THIS QUERY\.\n[\s\S]*RAILWAY TEST QUERIES - XX_TEST[\s\S]*OLN T1234567/);
+  assert.doesNotMatch(catalogText(recs, 'XX_TEST'), /NO TEST RECORD/);
+  assert.equal(requestEntityType(readRequest(req({ Name: 'SAMPLE, ALEX' }))), 'PERSON');
+  assert.equal(requestEntityType(readRequest(req({ OperatorLicenseNumber: 'T1' }))), 'PERSON');
+  assert.equal(requestEntityType(readRequest(req({ LicensePlateNumber: 'TEST01' }))), 'VEHICLE');
+  const c = catalogRecord(recs, 'XX_TEST', { noMatch: true, entityType: 'PERSON' });
+  assert.deepEqual([c.id, c.entityType, c.noMatch, c.match.kind], ['catalog-xx_test-no-match', 'PERSON', true, 'CATALOG (no match)']);
+  assert.match(c.replies[0].response, /NO TEST RECORD MATCHES THIS QUERY/);
 });
