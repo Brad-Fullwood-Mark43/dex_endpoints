@@ -142,7 +142,7 @@ test('query catalog: X1X1 (any state, any spacing) asks for it; the list covers 
     rec({ kind: 'VIN', VehicleIdentificationNumber: 'OTHERREGION0001' }, undefined, 'YY_TEST'),
   ];
   const text = catalogText(recs, 'XX_TEST');
-  assert.match(text, /RAILWAY TEST QUERIES - XX_TEST/);
+  assert.match(text, /MARK43 TEST DATA QUERIES - XX_TEST/);
   assert.match(text, /PERSON BY DRIVER LICENSE \(1\)\n  OLN T1234567  State XX or blank/);
   assert.match(text, /SAMPLE, ALEX B  DOB 06\/30\/1985  Sex M  State ZZ  \(1 reply  HIT\)/);
   assert.match(text, /VEHICLE BY PLATE \(1\)\n  Plate TEST01/);
@@ -172,7 +172,7 @@ test('a NAME_DOB record without SexCode is accepted and listed as any sex; the c
 
 test('no match: the catalog goes out headed "no test record matches", logged with the request entity', () => {
   const recs = [rec({ kind: 'OLN', OperatorLicenseNumber: 'T1234567', State: null })];
-  assert.match(catalogText(recs, 'XX_TEST', { noMatch: true }), /^NO TEST RECORD MATCHES THIS QUERY\.\n[\s\S]*RAILWAY TEST QUERIES - XX_TEST[\s\S]*OLN T1234567/);
+  assert.match(catalogText(recs, 'XX_TEST', { noMatch: true }), /^NO TEST RECORD MATCHES THIS QUERY\.\n[\s\S]*MARK43 TEST DATA QUERIES - XX_TEST[\s\S]*OLN T1234567/);
   assert.doesNotMatch(catalogText(recs, 'XX_TEST'), /NO TEST RECORD/);
   assert.equal(requestEntityType(readRequest(req({ Name: 'SAMPLE, ALEX' }))), 'PERSON');
   assert.equal(requestEntityType(readRequest(req({ OperatorLicenseNumber: 'T1' }))), 'PERSON');
