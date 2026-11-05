@@ -67,13 +67,21 @@ function nameParts(f) {
   if (n.includes(',')) { const [last, rest = ''] = n.split(','); const [first = '', ...mid] = rest.trim().split(/\s+/); return { last: last.trim(), first, middle: mid.join(' ') }; }
   const p = n.split(/\s+/); return { last: p[0], first: p[1] || '', middle: p.slice(2).join(' ') };
 }
-const ymd = (v) => { const s = String(v || '').trim(); let m; if ((m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(s))) return `${m[1]}${m[2]}${m[3]}`; if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s))) return `${m[3]}${m[1].padStart(2, '0')}${m[2].padStart(2, '0')}`; return s; };
+// BirthDate to YYYYMMDD. Accepts YYYYMMDD / YYYY-MM-DD, and MMDDYYYY / MM-DD-YYYY / M/D/YYYY (TX_TLETS requests send
+// MMDDYYYY). Eight digits are never ambiguous: a YYYY lead is 1800 or more, an MMDD lead is 1231 or less.
+const ymd = (v) => {
+  const s = String(v || '').trim(); let m;
+  if ((m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(s)) && Number(m[1]) >= 1800) return `${m[1]}${m[2]}${m[3]}`;
+  if ((m = /^(\d{2})-?(\d{2})-?(\d{4})$/.exec(s))) return `${m[3]}${m[1]}${m[2]}`;
+  if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s))) return `${m[3]}${m[1].padStart(2, '0')}${m[2].padStart(2, '0')}`;
+  return s;
+};
 
 /**
  * Does a replay record answer this request? Match rules (docs/REPLAY.md):
  *   OLN       OperatorLicenseNumber equal, ignoring case and leading zeros; State equal (in-state = no State, or the home state)
  *   NAME_DOB  last and first name equal (case-insensitive); middle checked by its first letter only when both sides have one;
- *             BirthDate equal; SexCode equal when both sides have one; State as above
+ *             BirthDate the same date (YYYYMMDD or MMDDYYYY on either side); SexCode equal when both sides have one; State as above
  *   PLATE     LicensePlateNumber equal (case-insensitive); State equal, or absent / home on either side for an in-state record
  *   VIN       VehicleIdentificationNumber equal (case-insensitive)
  */

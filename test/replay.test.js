@@ -48,6 +48,12 @@ test('NAME_DOB: "LAST, FIRST M" or split name parts; middle by initial; DOB and 
   assert.ok(matches(r, readRequest(req({ NameLast: 'Sample', NameFirst: 'Alex', BirthDate: '1985-06-30' })), 'XX'));
   assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX C', BirthDate: '19850630' })), 'XX'));
   assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850701' })), 'XX'));
+  // MMDDYYYY (TX_TLETS request order) is the same date as the record's YYYYMMDD, and the other way round
+  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06301985' })), 'XX'));
+  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06-30-1985' })), 'XX'));
+  assert.ok(matches(rec({ ...r.match, BirthDate: '06301985' }), readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '07011985' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '30061985' })), 'XX'));
   assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630', SexCode: 'F' })), 'XX'));
 });
 

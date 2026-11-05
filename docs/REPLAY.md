@@ -31,7 +31,8 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
   - `OLN`: `OperatorLicenseNumber` equal, ignoring case and **leading zeros** (LA DMV echoes an 8-digit OLN as 9 digits with a
     leading 0); `State` equal, where in-state means no `<State>` (the agent sends none for in-state queries) or the home state.
   - `NAME_DOB`: `Name` (`LAST, FIRST M`) or `NameLast`/`NameFirst`; last and first equal; middle compared by initial only when
-    both have one; `BirthDate` (YYYYMMDD) equal; `SexCode` equal when both have one; `State` as above.
+    both have one; `BirthDate` the same date, in either order (`YYYYMMDD` or `MMDDYYYY`, with or without `-`; TX_TLETS requests send
+    `MMDDYYYY`, packs store `YYYYMMDD`); `SexCode` equal when both have one; `State` as above.
   - `PLATE`: `LicensePlateNumber` equal (case-insensitive); `State` as above. Plate year and type are not matched.
   - `VIN`: `VehicleIdentificationNumber` equal.
   When several records match, the one with the most replies (then the most full envelopes) wins.
