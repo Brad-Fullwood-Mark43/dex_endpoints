@@ -95,7 +95,7 @@
 </main>
 
 <script>
-const S = { settings: {}, regions: [], records: [], replays: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
+const S = { settings: {}, regions: [], records: [], replays: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null, recView: null, rf: { kind: '', source: '', hit: false, q: '' } };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const api = async (method, url, body) => {
@@ -266,15 +266,41 @@ const TEMPLATE = (type) => ({
   match: Object.fromEntries((S.matchKeys[type] || []).map((k) => [k, ''])),
   results: [{ hit: false, class: type === 'PERSON' ? 'DriverLicense' : type === 'VEHICLE' ? 'VehicleRegistration' : 'NoRecord', system: 'DMV', responseType: 'Record', messageType: 'Record', interfaceName: 'MOCK_INTERFACE', systemName: 'DMV', messageData: 'FREE TEXT RETURNED BY THE INTERFACE', fields: {} }],
 });
+// The tab shows one set at a time: the original (synthetic, hand-made) records, or one region's captured replays.
+// The choice is kept in localStorage so a reload stays on the same set.
+const ORIGINAL = 'original';
+function recViews() {
+  const n = {};
+  S.replays.forEach((r) => { n[r.region] = (n[r.region] || 0) + 1; });
+  return [[ORIGINAL, `Original records (${S.records.length})`], ...Object.keys(n).sort().map((k) => [k, `${k} replays (${n[k]})`])];
+}
+function recView() {
+  const v = S.recView || localStorage.getItem('recView') || ORIGINAL;
+  return recViews().some(([k]) => k === v) ? v : ORIGINAL;
+}
+function setRecView(v) {
+  S.recView = v; localStorage.setItem('recView', v);
+  S.editing = null; S.rf = { kind: '', source: '', hit: false, q: '' };
+  renderRecords();
+}
+function renderOriginalList() {
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
+      <div class="muted" style="margin-bottom:6px">Synthetic records. They answer devices whose ORI has no replay region.</div>
+      ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div>`;
+}
 function renderRecords() {
   const el = $('#tab-records');
   const ed = S.editing;
+  const view = recView();
   el.innerHTML = `<div class="row" style="align-items:flex-start">
-    <div class="panel" style="flex:1"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
-      ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
-      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div>
-      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="pack-btn">Import replay pack</button><input type="file" id="pack-file" accept=".json,application/json" class="hide" /><span class="muted">A USx Railway Capture export: adds to its region, replacing the same query; the region's other replays stay.</span></div><div id="pack-msg" class="muted" style="margin-top:6px"></div>
-      ${renderReplayList()}</div>
+    <div class="panel" style="flex:1">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div style="flex:1;min-width:220px"><label>Show</label><select id="rec-view">${recViews().map(([k, l]) => `<option value="${esc(k)}" ${k === view ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <button id="pack-btn" title="A USx Railway Capture export: adds to its region, replacing the same query; the region's other replays stay.">Import replay pack</button><input type="file" id="pack-file" accept=".json,application/json" class="hide" />
+      </div>
+      <div id="pack-msg" class="muted" style="margin-bottom:6px"></div>
+      ${view === ORIGINAL ? renderOriginalList() : renderReplayRegion(view)}</div>
     <div class="panel" style="flex:1.4">${ed && ed.replay ? replayEditor(ed) : ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
       <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
       <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="ed-save">Save</button>${ed.data.id ? '<button class="danger" id="ed-del">Delete</button>' : ''}<span id="ed-msg" class="muted"></span></div>`
@@ -288,20 +314,39 @@ const PHOTO = '(blurred photo: kept as stored)';
 const replayLabel = (m) => m.kind === 'NAME_DOB' ? `${m.NameLast}, ${m.NameFirst}${m.NameMiddle ? ' ' + m.NameMiddle : ''} · ${m.BirthDate}${m.SexCode ? ' · ' + m.SexCode : ''}`
   : m.OperatorLicenseNumber || m.LicensePlateNumber || m.VehicleIdentificationNumber || '';
 const KIND = { OLN: 'OLN', NAME_DOB: 'Name/DOB', PLATE: 'Plate', VIN: 'VIN' };
-function renderReplayList() {
-  if (!S.replays.length) return '';
-  const regions = [...new Set(S.replays.map((r) => r.region))].sort();
-  const oris = (region) => Object.entries(S.settings.regionByOri || {}).filter(([, v]) => v === region).map(([k]) => (k.length === 2 ? `any ${k}… ORI` : k)).join(' or ');
-  return regions.map((region) => {
-    const order = Object.keys(KIND);
-    const list = S.replays.filter((r) => r.region === region).sort((a, b) => order.indexOf(a.match.kind) - order.indexOf(b.match.kind) || replayLabel(a.match).localeCompare(replayLabel(b.match)));
-    return `<h3 style="margin-top:22px;padding-top:14px;border-top:2px solid var(--stroke)">Captured replays · ${esc(region)} <span class="pill p-blue">${list.length}</span></h3>
-      <div class="muted" style="margin-bottom:6px">Captured from a real CommSys and ${esc(region)} switch, scrubbed, photos blurred. Devices with ORI ${esc(oris(region) || '(none mapped: set regionByOri)')} are answered only from these.</div>
-      ${list.map((r) => {
-        const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
-        const st = r.match.State || region.slice(0, 2);
-        return `<div class="rec" data-replay="${esc(r.id)}"><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
-      }).join('')}`;
+const regionReplays = (region) => S.replays.filter((r) => r.region === region);
+const sourcesOf = (r) => [...new Set((r.sources || []).filter(Boolean))];
+function renderReplayRegion(region) {
+  const all = regionReplays(region);
+  const oris = Object.entries(S.settings.regionByOri || {}).filter(([, v]) => v === region).map(([k]) => (k.length === 2 ? `any ${k}… ORI` : k)).join(' or ');
+  const f = S.rf || (S.rf = { kind: '', source: '', hit: false, q: '' });
+  const kinds = Object.keys(KIND).filter((k) => all.some((r) => r.match.kind === k));
+  const sources = [...new Set(all.flatMap(sourcesOf))].sort();
+  const count = (p) => all.filter(p).length;
+  return `<div class="muted" style="margin-bottom:8px">Captured from a real CommSys and ${esc(region)} switch, scrubbed, photos blurred. Devices with ORI ${esc(oris || '(none mapped: set regionByOri)')} are answered only from these.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="pill p-blue">${all.length} queries</span><span class="pill p-red">${count((r) => r.hit)} HIT</span><span class="pill p-grey">${all.reduce((n, r) => n + r.replies, 0)} replies</span><span class="pill p-grey">${count((r) => r.photos)} with photo</span>${count((r) => r.edited) ? `<span class="pill p-amber">${count((r) => r.edited)} edited</span>` : ''}${count((r) => r.fullEnvelope !== r.replies) ? `<span class="pill p-amber">${count((r) => r.fullEnvelope !== r.replies)} not full envelope</span>` : ''}</div>
+      <div class="row" style="margin-bottom:8px;align-items:flex-end">
+        <div><label>Query type</label><select id="rf-kind"><option value="">All (${all.length})</option>${kinds.map((k) => `<option value="${k}" ${f.kind === k ? 'selected' : ''}>${KIND[k]} (${count((r) => r.match.kind === k)})</option>`).join('')}</select></div>
+        <div><label>Source</label><select id="rf-source"><option value="">All</option>${sources.map((s) => `<option value="${esc(s)}" ${f.source === s ? 'selected' : ''}>${esc(s)} (${count((r) => sourcesOf(r).includes(s))})</option>`).join('')}</select></div>
+        <div style="flex:1.4"><label>Search</label><input id="rf-q" value="${esc(f.q)}" placeholder="Name, OLN, plate or VIN" /></div>
+        <label style="flex:0;white-space:nowrap;display:flex;gap:4px;align-items:center;margin-bottom:8px"><input type="checkbox" id="rf-hit" style="width:auto" ${f.hit ? 'checked' : ''} />HIT only</label>
+      </div>
+      <div id="rp-list">${replayRows(region)}</div>
+      <div style="margin-top:12px"><button class="danger" id="rp-clear" data-region="${esc(region)}">Delete all ${esc(region)} replays</button></div>`;
+}
+function replayRows(region) {
+  const f = S.rf || {};
+  const q = (f.q || '').trim().toUpperCase();
+  const order = Object.keys(KIND);
+  const list = regionReplays(region)
+    .filter((r) => (!f.kind || r.match.kind === f.kind) && (!f.source || sourcesOf(r).includes(f.source)) && (!f.hit || r.hit) && (!q || replayLabel(r.match).toUpperCase().includes(q)))
+    .sort((a, b) => order.indexOf(a.match.kind) - order.indexOf(b.match.kind) || replayLabel(a.match).localeCompare(replayLabel(b.match)));
+  if (!list.length) return '<div class="empty">No replays match these filters.</div>';
+  return list.map((r) => {
+    const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
+    const st = r.match.State || region.slice(0, 2);
+    const open = S.editing && S.editing.replay && S.editing.data.id === r.id;
+    return `<div class="rec" data-replay="${esc(r.id)}" ${open ? 'style="background:var(--accent)"' : ''}><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted" title="${esc(sourcesOf(r).join(', '))}">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
   }).join('');
 }
 function replayForEditor(rec) {
@@ -390,6 +435,7 @@ document.addEventListener('click', async (e) => {
     } catch (err) { $('#rp-msg').textContent = err.message; }
   }
   if (t.id === 'rp-del' && confirm('Delete this captured replay? Queries for it will get an acknowledgement only.')) { await api('DELETE', `/api/replay-records/${encodeURIComponent(S.editing.data.id)}`); S.editing = null; await refreshState(); renderRecords(); }
+  if (t.id === 'rp-clear' && confirm(`Delete ALL ${t.dataset.region} captured replays? Devices mapped to ${t.dataset.region} will get an acknowledgement only until a pack is imported again.`)) { await api('DELETE', `/api/replays/${encodeURIComponent(t.dataset.region)}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'ed-del') { await api('DELETE', `/api/records/${S.editing.data.id}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'reset' && confirm('Replace all records with the seed set?')) { await api('POST', '/api/records-reset'); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'csv-btn') $('#csv-file').click();
@@ -404,6 +450,20 @@ document.addEventListener('click', async (e) => {
     document.querySelectorAll('[data-s]').forEach((i) => { patch[i.dataset.s] = i.value === 'true' ? true : i.value === 'false' ? false : i.value; });
     await api('PUT', '/api/settings', patch); await refreshState(); renderBanners(); $('#set-msg').textContent = 'Saved';
   }
+});
+
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'rec-view') return setRecView(e.target.value);
+  if (id === 'rf-kind' || id === 'rf-source' || id === 'rf-hit') {
+    S.rf[id.slice(3)] = id === 'rf-hit' ? e.target.checked : e.target.value;
+    $('#rp-list').innerHTML = replayRows(recView());
+  }
+});
+// Search filters only the list, so the input keeps focus while typing.
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'rf-q') return;
+  S.rf.q = e.target.value; $('#rp-list').innerHTML = replayRows(recView());
 });
 
 document.addEventListener('change', (e) => {
@@ -425,7 +485,7 @@ The same query already in ${region} is replaced; its other replays stay.`)) retu
     const res = await fetch('/api/replays?mode=merge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack) });
     const out = await res.json();
     if (!res.ok) throw new Error((out.problems || [out.error]).join('; '));
-    await refreshState(); renderRecords();
+    await refreshState(); setRecView(out.region);
     $('#pack-msg').textContent = `${out.region}: ${out.added} added, ${out.replaced} replaced, ${out.total} in total.${out.oriMapped ? ` Device ORI ${out.oriMapped} now maps to ${out.region}.` : ''}${out.oriConflict ? ' ' + out.oriConflict : ''}`;
   } catch (err) { $('#pack-msg').textContent = `Not imported: ${err.message}`; }
 });
