@@ -98,8 +98,14 @@ export function replayFrames(record, requestId) {
   let prev = 0;
   return record.replies.map((r) => {
     let resp = String(r.response || '').trim();
-    if (/<Request>\s*<Id>[^<]*<\/Id>/.test(resp)) resp = resp.replace(/(<Request>\s*<Id>)[^<]*(<\/Id>)/, `$1${id}$2`);
-    else resp = resp.replace(/^<Response>/, `<Response><Request><Id>${id}</Id></Request>`);
+    // A full CommSys envelope writes <Request><ConnectCICRequestId>..</ConnectCICRequestId><Id>..</Id></Request>, so the Id
+    // is not always first, and one reply can hold several <Response> elements (a photo response, then the record), each
+    // with its own Request. Set the Id inside every existing Request block; never add a second Request to a Response (the
+    // agent would read the captured query's id and drop the reply).
+    if (/<Request>[\s\S]*?<\/Request>/.test(resp)) {
+      resp = resp.replace(/<Request>([\s\S]*?)<\/Request>/g, (_m, inner) =>
+        `<Request>${/<Id>[^<]*<\/Id>/.test(inner) ? inner.replace(/<Id>[^<]*<\/Id>/, `<Id>${id}</Id>`) : `${inner}<Id>${id}</Id>`}</Request>`);
+    } else resp = resp.replace(/^<Response>/, `<Response><Request><Id>${id}</Id></Request>`);
     if (r.attachedImage && !/<ImageData>/.test(resp)) resp = resp.replace(/<\/Response>\s*$/, `<Image><ImageData>${r.attachedImage}</ImageData></Image></Response>`);
     const delayMs = Math.max(0, (r.offsetMs ?? 0) - prev);
     prev = r.offsetMs ?? prev;

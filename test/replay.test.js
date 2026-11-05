@@ -86,6 +86,21 @@ test('replayFrames: request id swapped or inserted, spacing kept, photo put back
   assert.match(f[1].xml, /<Image><ImageData>\/9j\/AAAA<\/ImageData><\/Image><\/Response>/);
 });
 
+test('replayFrames: a full CommSys envelope (ConnectCICRequestId before Id) keeps one Request, with the new id', () => {
+  const r = rec({ kind: 'OLN', OperatorLicenseNumber: '1', State: null }, [
+    { offsetMs: 1000, fullEnvelope: true, response: '<Response><Class>Accept</Class><MessageData>X</MessageData><Request><ConnectCICRequestId>1234</ConnectCICRequestId><Id>OLDID</Id></Request><System>OSW</System></Response>' },
+  ]);
+  const [f] = replayFrames(r, 'NEWID');
+  assert.equal((f.xml.match(/<Request>/g) || []).length, 1);
+  assert.match(f.xml, /<Request><ConnectCICRequestId>1234<\/ConnectCICRequestId><Id>NEWID<\/Id><\/Request>/);
+  assert.doesNotMatch(f.xml, /OLDID/);
+  const two = replayFrames(rec({ kind: 'OLN', OperatorLicenseNumber: '1', State: null }, [{ offsetMs: 0, fullEnvelope: true,
+    response: '<Response><Image/><Request><Id>OLDA</Id></Request></Response><Response><Class>DMV</Class><Request><ConnectCICRequestId>9</ConnectCICRequestId><Id>OLDB</Id></Request></Response>' }]), 'NEWID')[0];
+  assert.equal((two.xml.match(/<Request>/g) || []).length, 2);
+  assert.equal((two.xml.match(/<Id>NEWID<\/Id>/g) || []).length, 2);
+  assert.doesNotMatch(two.xml, /OLDA|OLDB/);
+});
+
 test('validatePack rejects malformed packs', () => {
   assert.deepEqual(validatePack({ records: [rec({ kind: 'OLN', OperatorLicenseNumber: '1' })] }), []);
   assert.ok(validatePack({}).length);
