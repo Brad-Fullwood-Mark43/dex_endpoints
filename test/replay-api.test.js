@@ -49,3 +49,28 @@ test('a replay record can be listed, opened, edited and deleted; id and region n
   assert.equal((await call('GET', '/api/replays')).json.length, 0);
   assert.equal((await call('DELETE', '/api/replay-records/replay-xx-1')).status, 404);
 });
+
+test('import (mode=merge) adds to the region, replaces the same query, keeps the rest, maps the test ORI once', async () => {
+  const rec = (id, oln, text = 'TEST') => ({ id, type: 'replay', region: 'YY_TEST', certified: true, entityType: 'PERSON',
+    match: { kind: 'OLN', OperatorLicenseNumber: oln, State: null },
+    replies: [{ offsetMs: 1000, dataSource: 'OSW', fullEnvelope: false, response: `<Response><MessageData>${text}</MessageData></Response>` }] });
+  assert.equal((await call('POST', '/api/replays', { region: 'YY_TEST', records: [rec('a', 'T1000001'), rec('b', 'T1000002')] })).status, 200);
+
+  const m = await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', testOri: 'YY1000001', records: [rec('c', 'T1000002', 'NEWER'), rec('d', 'T1000003')] });
+  assert.equal(m.status, 200);
+  assert.deepEqual([m.json.added, m.json.replaced, m.json.total, m.json.oriMapped], [1, 1, 3, 'YY1000001']);
+  const held = (await call('GET', '/api/replays')).json.filter((r) => r.region === 'YY_TEST').map((r) => r.id).sort();
+  assert.deepEqual(held, ['a', 'c', 'd']);
+  assert.equal((await call('GET', '/api/replay-records/c')).json.replies[0].response, '<Response><MessageData>NEWER</MessageData></Response>');
+
+  // an ORI already mapped elsewhere is left alone
+  await call('PUT', '/api/settings', { regionByOri: { YY1000001: 'ZZ_OTHER' } });
+  const again = await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', testOri: 'YY1000001', records: [rec('e', 'T1000004')] });
+  assert.match(again.json.oriConflict, /mapped to ZZ_OTHER/);
+  assert.equal((await call('GET', '/api/state')).json.settings.regionByOri.YY1000001, 'ZZ_OTHER');
+
+  // packs with photos can pass the 2 MB /api limit
+  const big = rec('f', 'T1000005'); big.replies[0].attachedImage = 'A'.repeat(3 * 1024 * 1024);
+  assert.equal((await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', records: [big] })).status, 200);
+  assert.equal((await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', records: [{ type: 'nope' }] })).status, 400);
+});

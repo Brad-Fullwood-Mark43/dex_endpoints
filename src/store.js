@@ -102,6 +102,23 @@ export function deleteReplay(id) {
   return before !== state.replays.length;
 }
 
+/**
+ * Adds a pack's records to their region, keeping the region's other records. A record replaces an existing one with the
+ * same id or the same match (the same query captured again). Returns { added, replaced, total }.
+ */
+export function mergeRegionReplays(region, list) {
+  const key = (r) => JSON.stringify(r.match);
+  let added = 0, replaced = 0;
+  for (const rec of list) {
+    const before = state.replays.length;
+    state.replays = state.replays.filter((r) => !(r.region === region && (r.id === rec.id || key(r) === key(rec))));
+    if (state.replays.length < before) replaced++; else added++;
+    state.replays.push(rec);
+  }
+  save();
+  return { added, replaced, total: state.replays.filter((r) => r.region === region).length };
+}
+
 /** Removes one region's replay records. */
 export function clearRegionReplays(region) {
   const before = state.replays.length;

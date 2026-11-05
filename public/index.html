@@ -273,6 +273,7 @@ function renderRecords() {
     <div class="panel" style="flex:1"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
       ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
       <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div>
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="pack-btn">Import replay pack</button><input type="file" id="pack-file" accept=".json,application/json" class="hide" /><span class="muted">A USx Railway Capture export: adds to its region, replacing the same query; the region's other replays stay.</span></div><div id="pack-msg" class="muted" style="margin-top:6px"></div>
       ${renderReplayList()}</div>
     <div class="panel" style="flex:1.4">${ed && ed.replay ? replayEditor(ed) : ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
       <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
@@ -392,6 +393,7 @@ document.addEventListener('click', async (e) => {
   if (t.id === 'ed-del') { await api('DELETE', `/api/records/${S.editing.data.id}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'reset' && confirm('Replace all records with the seed set?')) { await api('POST', '/api/records-reset'); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'csv-btn') $('#csv-file').click();
+  if (t.id === 'pack-btn') $('#pack-file').click();
   if (t.id === 'bulk') {
     const text = prompt('Paste a JSON array of records (same shape as the editor):');
     if (!text) return;
@@ -408,6 +410,24 @@ document.addEventListener('change', (e) => {
   if (e.target.dataset?.s !== 'region') return;
   const note = $('#region-note');
   if (note) note.textContent = (S.regions.find((r) => r.id === e.target.value) || {}).note || '';
+});
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'pack-file' || !e.target.files[0]) return;
+  const file = e.target.files[0];
+  e.target.value = '';
+  try {
+    const pack = JSON.parse(await file.text());
+    const region = pack.region || (pack.records || [])[0]?.region || '?';
+    if (!confirm(`Add ${(pack.records || []).length} captured replay(s) to ${region}?
+
+The same query already in ${region} is replaced; its other replays stay.`)) return;
+    const res = await fetch('/api/replays?mode=merge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack) });
+    const out = await res.json();
+    if (!res.ok) throw new Error((out.problems || [out.error]).join('; '));
+    await refreshState(); renderRecords();
+    $('#pack-msg').textContent = `${out.region}: ${out.added} added, ${out.replaced} replaced, ${out.total} in total.${out.oriMapped ? ` Device ORI ${out.oriMapped} now maps to ${out.region}.` : ''}${out.oriConflict ? ' ' + out.oriConflict : ''}`;
+  } catch (err) { $('#pack-msg').textContent = `Not imported: ${err.message}`; }
 });
 
 document.addEventListener('change', async (e) => {

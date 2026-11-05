@@ -10,7 +10,7 @@ import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
 import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
-import { replays, setRegionReplays, clearRegionReplays, updateReplay, deleteReplay } from './store.js';
+import { replays, setRegionReplays, mergeRegionReplays, clearRegionReplays, updateReplay, deleteReplay } from './store.js';
 import { validatePack } from './replay.js';
 import { createTcpServer } from './tcp-server.js';
 
@@ -104,6 +104,8 @@ export function createApp() {
     res.set('WWW-Authenticate', 'Basic realm="dex_endpoints"').status(401).send('Authentication required');
   };
 
+  // replay packs carry blurred photos and can pass 2 MB; their routes parse first, with a larger limit
+  app.use(['/api/replays', '/api/replay-records'], adminAuth, express.json({ limit: '25mb' }));
   app.use('/api', adminAuth, express.json({ limit: '2mb' }));
   app.use(adminAuth, express.static(path.join(here, '..', 'public')));
 
@@ -154,7 +156,7 @@ export function createApp() {
   app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length, sources: r.replies.map((x) => x.dataSource || ''), photos: r.replies.filter((x) => x.attachedImage || /<ImageData>/.test(x.response || '')).length, certified: r.certified !== false, edited: !!r.edited }))));
   // One replay record, for the Records tab editor. Saving re-validates it like an uploaded pack; id and region are fixed.
   app.get('/api/replay-records/:id', (req, res) => { const r = replays().find((x) => x.id === req.params.id); return r ? res.json(r) : res.status(404).json({ error: 'Not found' }); });
-  app.put('/api/replay-records/:id', express.json({ limit: '20mb' }), (req, res) => {
+  app.put('/api/replay-records/:id', (req, res) => {
     const current = replays().find((x) => x.id === req.params.id);
     if (!current) return res.status(404).json({ error: 'Not found' });
     const rec = { ...(req.body ?? {}), id: current.id, region: current.region, type: 'replay' };
@@ -163,13 +165,23 @@ export function createApp() {
     res.json(updateReplay(current.id, rec));
   });
   app.delete('/api/replay-records/:id', (req, res) => (deleteReplay(req.params.id) ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' })));
-  app.post('/api/replays', express.json({ limit: '20mb' }), (req, res) => {
+  // ?mode=merge (the Records tab's Import replay pack): add to the region, replacing the same query; otherwise the
+  // region's records are replaced. A pack's testOri is mapped to its region when that ORI isn't mapped yet.
+  app.post('/api/replays', (req, res) => {
     const pack = req.body ?? {};
     const problems = validatePack(pack);
     const regions = [...new Set((pack.records || []).map((r) => r.region))];
     if (regions.length !== 1) problems.push('a pack must hold exactly one region');
     if (problems.length) return res.status(400).json({ error: 'invalid replay pack', problems: problems.slice(0, 20) });
-    res.json({ region: regions[0], stored: setRegionReplays(regions[0], pack.records) });
+    const region = regions[0];
+    const out = req.query.mode === 'merge' ? { region, ...mergeRegionReplays(region, pack.records) } : { region, stored: setRegionReplays(region, pack.records) };
+    const ori = String(pack.testOri || '').toUpperCase();
+    if (/^[A-Z]{2}[A-Z0-9]{7}$/.test(ori)) {
+      const map = settings().regionByOri || {};
+      if (!map[ori]) { updateSettings({ regionByOri: { ...map, [ori]: region } }); out.oriMapped = ori; }
+      else if (map[ori] !== region) out.oriConflict = `${ori} is mapped to ${map[ori]}, not ${region}: left as is`;
+    }
+    res.json(out);
   });
   app.delete('/api/replays/:region', (req, res) => res.json({ region: req.params.region, removed: clearRegionReplays(req.params.region) }));
   app.post('/api/records', (req, res) => res.json(upsertRecord(req.body ?? {})));

@@ -50,12 +50,19 @@ extract → scrub → verify → pack). **Packs are never committed here**: they
 
 ```
 POST   /api/replays            body: the pack JSON  -> replaces that region's replay records (validated: validatePack)
+POST   /api/replays?mode=merge same body             -> adds to the region; a record with the same id or match replaces
+                                                        the old one; the region's other records stay
 GET    /api/replays            summary: id, region, entityType, match, reply counts
 DELETE /api/replays/:region    removes a region's replay records
 GET    /api/replay-records/:id one full replay record (the Records tab editor)
 PUT    /api/replay-records/:id replaces one record (validated like a pack; id and region fixed; marked edited: true)
 DELETE /api/replay-records/:id removes one record
 ```
+
+Packs exported by the USx Railway Capture browser extension (Gordon's `Projects/USx-Railway-Capture`: captures or pasted
+replies, scrubbed in the browser) are imported with **Import replay pack** on the Records tab, which uses `mode=merge`.
+Either upload maps the pack's `testOri` to its region when that ORI isn't mapped yet (an existing mapping is never
+changed). The replay routes accept up to 25 MB (photos); the rest of `/api` keeps its 2 MB limit.
 
 The Records tab lists replays in their own section per region, below the synthetic records, with kind, state, reply count,
 photo, envelope (full / text only) and EDITED tags. The editor is the same JSON editor; blurred photos show as a placeholder
