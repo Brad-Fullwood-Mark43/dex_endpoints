@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-uxp-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Replay view</title>
+<!--
+  One captured replay, shown the way Universal Search would show it, using the USx Parsing view
+  (vendor/usx-parsing-embed.js, built by Gordon's Projects/USx-Parsing tools/build-embed.js; do not edit it here).
+  The record's replies are turned into what Universal Search's federated-search API returns (a federated query, its
+  results, and photos as s3proxy bodies), and the view is built from that, as the userscript does on the live page.
+  Nothing leaves the browser: the record comes from /api/replay-records/:id and is rendered here.
+-->
+<style>
+  body { margin: 0; background: #f4f6fa; color: #1A2235; font: 14px/1.45 proxima-nova, "Proxima Nova", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .shell { max-width: 1100px; margin: 0 auto; padding: 16px 20px 48px; }
+  .card { background: #fff; border: 1px solid #dfe3ec; border-radius: 6px; padding: 16px 18px; }
+  .note { color: #5b6478; font-size: 12px; margin: 10px 2px 0; }
+  .err { color: #b42318; }
+</style>
+<script src="/vendor/usx-parsing-embed.js"></script>
+</head>
+<body>
+<div class="shell"><div class="card" id="host">Loading…</div>
+<div class="note" id="note"></div></div>
+<script>
+(async () => {
+  const host = document.getElementById('host');
+  const E = window.UsxParsingEmbed;
+  try {
+    if (!E || !E.render) throw new Error('the USx Parsing view did not load');
+    const css = document.createElement('style'); css.textContent = E.css; document.head.append(css);
+    const id = new URLSearchParams(location.search).get('id');
+    const res = await fetch(`/api/replay-records/${encodeURIComponent(id || '')}`);
+    if (!res.ok) throw new Error(`replay ${id} not found (HTTP ${res.status})`);
+    const rec = await res.json();
+    const { bodies, notes } = toUsx(rec);
+    host.replaceChildren(E.render(bodies, { title: `Captured replay · ${rec.region}` }));
+    document.title = `Replay view · ${rec.region}`;
+    document.getElementById('note').textContent = notes.join(' ');
+  } catch (e) {
+    host.innerHTML = '';
+    host.append(Object.assign(document.createElement('div'), { className: 'err', textContent: `Could not render: ${e.message}` }));
+  }
+
+  // A replay record -> the federated-search bodies USx Parsing ingests. Query keys and value shapes follow Universal
+  // Search's parsedRawQuery (RegistrationState, BirthDate YYYY-MM-DD, SexCode as a word); result statuses are
+  // SUCCESS / NO_CONTENT / ERROR. A reply's Class decides its status: NoRecord -> NO_CONTENT, an error class -> ERROR
+  // (an assumption: the CommSys Class is not stored in Universal Search's result).
+  function toUsx(rec) {
+    const m = rec.match || {};
+    const raw = {};
+    const set = (k, v) => { if (v != null && v !== '') raw[k] = v; };
+    if (m.kind === 'OLN') set('OperatorLicenseNumber', m.OperatorLicenseNumber);
+    if (m.kind === 'NAME_DOB') {
+      set('NameLast', m.NameLast); set('NameFirst', m.NameFirst); set('NameMiddle', m.NameMiddle);
+      set('BirthDate', /^\d{8}$/.test(m.BirthDate || '') ? `${m.BirthDate.slice(0, 4)}-${m.BirthDate.slice(4, 6)}-${m.BirthDate.slice(6)}` : m.BirthDate);
+      set('SexCode', { F: 'FEMALE', M: 'MALE' }[m.SexCode] || m.SexCode);
+    }
+    if (m.kind === 'PLATE') set('LicensePlateNumber', m.LicensePlateNumber);
+    if (m.kind === 'VIN') set('VehicleIdentificationNumber', m.VehicleIdentificationNumber);
+    set('RegistrationState', m.State);
+    const entity = rec.entityType || (/PLATE|VIN/.test(m.kind) ? 'VEHICLE' : 'PERSON');
+    const t0 = Date.parse(rec.captured || '') || Date.now();
+    const fqId = `replay-${rec.id}`;
+    const fq = { id: fqId, queryableEntityType: entity, queries: [{ id: 'q1' }], parsedRawQuery: raw, auditMetadata: { createdDateUtc: new Date(t0).toISOString() } };
+    const results = [];
+    const images = [];
+    let textOnly = 0;
+    (rec.replies || []).forEach((x, i) => {
+      const xml = String(x.response || '');
+      const tag = (name) => (new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(xml) || [])[1];
+      let text = tag('MessageData') ?? tag('RawMessageData') ?? '';
+      const cdata = /^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/.exec(text);
+      if (cdata) text = cdata[1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cls = tag('Class') || '';
+      if (!x.fullEnvelope) textOnly++;
+      const id = `${rec.id}-${i}`;
+      const photos = [x.attachedImage, ...[...xml.matchAll(/<ImageData>([^<]+)<\/ImageData>/g)].map((p) => p[1])].filter((b) => b && b.trim());
+      const attachments = photos.map((b, k) => {
+        const url = `${location.origin}/federated-search/client/s3proxy/replay/${encodeURIComponent(id)}/${k}`;
+        images.push({ body: b, url });
+        return { fileCategory: 'IMAGE', caption: 'Photo (blurred)', originalFileUrl: url };
+      });
+      results.push({
+        id, federatedQueryId: fqId, queryId: 'q1', isRaw: true, dataSource: x.dataSource || null,
+        queryStatusEnum: /NoRecord/i.test(cls) ? 'NO_CONTENT' : /Error|Fail/i.test(cls) ? 'ERROR' : 'SUCCESS',
+        rawResultContent: `<Response><MessageData>${text}</MessageData></Response>`,
+        auditMetadata: { createdDateUtc: new Date(t0 + (Number(x.offsetMs) || 0)).toISOString() },
+        attachments
+      });
+    });
+    const notes = [`${results.length} captured repl${results.length === 1 ? 'y' : 'ies'}, scrubbed, photos blurred.`];
+    if (textOnly) notes.push(`${textOnly} text-only (no envelope): Universal Search may show those as Unknown.`);
+    if (rec.edited) notes.push('This record was edited after capture.');
+    return { bodies: [{ body: JSON.stringify(fq), url: 'replay/federated-query' }, { body: JSON.stringify(results), url: 'replay/query-results' }, ...images], notes };
+  }
+})();
+</script>
+</body>
+</html>

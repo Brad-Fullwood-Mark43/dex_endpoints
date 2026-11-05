@@ -69,7 +69,7 @@ The Records tab shows one set at a time, chosen under **Show**: the original (sy
 one of the USx regions with none yet (`USX_REGIONS` in `src/replay.js`, each with its invented test ORI, sent as
 `usxRegions` in `/api/state`). A region view has **Import replay pack** (it refuses a pack for a different region),
 **Export pack** (`GET /api/replays/:region/pack`), a summary, filters (query type, source, HIT only, search) and
-**Delete all <region> replays**. Each replay row shows kind, state, reply count,
+**Delete all <region> replays**. Each replay row has **Render** (a modal with `render.html?id=…`: the replies turned into Universal Search's federated-search shapes and shown with the USx Parsing view, in a frame) and **Edit** (the JSON editor, opened under the row). Each replay row shows kind, state, reply count,
 photo, envelope (full / text only) and EDITED tags, and a red HIT tag after the state when any reply has
 <Hit><Detected>1</Detected></Hit> (`replayHasHit` in `src/replay.js`, worked out on every listing, so uploads, imports and edits
 are always reflected; text-only replies have no envelope and never count). The editor is the same JSON editor; blurred photos show as a placeholder

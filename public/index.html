@@ -35,6 +35,11 @@
   @media (prefers-color-scheme: dark) { .p-red { color: #fecaca; } }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { background: none; border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  #render-modal { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 50; display: flex; align-items: center; justify-content: center; }
+  #render-modal .rm-box { width: min(1200px, 94vw); height: 92vh; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+  #render-modal .rm-bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--stroke); flex-wrap: wrap; }
+  #render-modal iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+  .rp-actions { display: flex; gap: 6px; } .rp-row { cursor: default; } .rp-inline { padding: 10px 4px 14px; border-bottom: 1px solid var(--stroke); }
   a.btnlink { border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; color: inherit; text-decoration: none; }
   button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
   button.danger { color: var(--red); } button:disabled { opacity: .5; cursor: not-allowed; }
@@ -313,10 +318,10 @@ function renderRecords() {
       </div>
       <div id="pack-msg" class="muted" style="margin-bottom:6px"></div>
       ${view === ORIGINAL ? renderOriginalList() : renderReplayRegion(view)}</div>
-    <div class="panel" style="flex:1.4">${ed && ed.replay ? replayEditor(ed) : ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
+    ${view !== ORIGINAL ? '' : `<div class="panel" style="flex:1.4">${ed && !ed.replay ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
       <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
       <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="ed-save">Save</button>${ed.data.id ? '<button class="danger" id="ed-del">Delete</button>' : ''}<span id="ed-msg" class="muted"></span></div>`
-      : '<div class="empty">Select a record, or add a new one.</div>'}</div></div>`;
+      : '<div class="empty">Select a record, or add a new one.</div>'}</div>`}</div>`;
 }
 
 // Captured replays (docs/REPLAY.md): reply sets captured from a real CommSys and state switch, scrubbed, per USx region.
@@ -362,7 +367,7 @@ function replayRows(region) {
     const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
     const st = r.match.State || region.slice(0, 2);
     const open = S.editing && S.editing.replay && S.editing.data.id === r.id;
-    return `<div class="rec" data-replay="${esc(r.id)}" ${open ? 'style="background:var(--accent)"' : ''}><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted" title="${esc(sourcesOf(r).join(', '))}">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
+    return `<div class="rec rp-row" ${open ? 'style="background:var(--accent)"' : ''}><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted" title="${esc(sourcesOf(r).join(', '))}">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}<span class="rp-actions"><button data-rp-render="${esc(r.id)}" title="Review the replies the way Universal Search would show them (USx Parsing view)">Render</button><button data-rp-edit="${esc(r.id)}" class="${open ? 'primary' : ''}">${open ? 'Close editor' : 'Edit'}</button></span></div>${open ? `<div class="rp-inline">${replayEditor(S.editing)}</div>` : ''}`;
   }).join('');
 }
 function replayForEditor(rec) {
@@ -385,6 +390,19 @@ function replayEditor(ed) {
       <textarea id="rp-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
       <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="rp-save">Save</button><button class="danger" id="rp-del">Delete</button><span id="rp-msg" class="muted"></span></div>`;
 }
+
+// Render: the record's replies as Universal Search would show them, through the USx Parsing view (public/render.html,
+// public/vendor/usx-parsing-embed.js), in a frame so neither page's styles reach the other.
+function openRender(id) {
+  const r = S.replays.find((x) => x.id === id);
+  const url = `/render.html?id=${encodeURIComponent(id)}`;
+  closeRender();
+  document.body.insertAdjacentHTML('beforeend', `<div id="render-modal"><div class="rm-box">
+    <div class="rm-bar"><b>${esc(r ? `${KIND[r.match.kind] || r.match.kind} · ${replayLabel(r.match)}` : id)}</b><span class="muted">${esc(r ? r.region : '')} · USx Parsing view of the captured replies</span><span style="flex:1"></span><a class="btnlink" href="${url}" target="_blank" rel="noopener">Open in new tab</a><button data-close-render>Close</button></div>
+    <iframe src="${url}" title="Rendered replay"></iframe></div></div>`);
+}
+function closeRender() { const m = $('#render-modal'); if (m) m.remove(); }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeRender(); });
 
 // ---- Settings tab
 function renderSettings() {
@@ -439,8 +457,15 @@ document.addEventListener('click', async (e) => {
       await refreshState(); S.editing = { data: saved }; renderRecords(); $('#ed-msg').textContent = 'Saved';
     } catch (err) { $('#ed-msg').textContent = err.message; }
   }
-  const rp = t.closest('[data-replay]');
-  if (rp) { const { view, photos } = replayForEditor(await api('GET', `/api/replay-records/${encodeURIComponent(rp.dataset.replay)}`)); S.editing = { replay: true, data: view, photos }; return renderRecords(); }
+  const rpe = t.closest('[data-rp-edit]');
+  if (rpe) {
+    const id = rpe.dataset.rpEdit;
+    if (S.editing && S.editing.replay && S.editing.data.id === id) { S.editing = null; $('#rp-list').innerHTML = replayRows(recView()); return; }
+    const { view, photos } = replayForEditor(await api('GET', `/api/replay-records/${encodeURIComponent(id)}`));
+    S.editing = { replay: true, data: view, photos }; $('#rp-list').innerHTML = replayRows(recView()); return;
+  }
+  const rpr = t.closest('[data-rp-render]'); if (rpr) return openRender(rpr.dataset.rpRender);
+  if (t.closest('[data-close-render]') || t.id === 'render-modal') return closeRender();
   if (t.id === 'rp-save') {
     try {
       const data = replayFromEditor(JSON.parse($('#rp-json').value), S.editing.photos);

@@ -66,6 +66,7 @@ Prismatic. The Prismatic gateway has an allowlist guard (rule 4); the TCP path h
 | `src/replay.js` | Replay: answers a request from a region with uploaded **captured, scrubbed reply sets** (match, region by device ORI, frames). Pure; wired into `tcp-server.js`; packs via `/api/replays`. Read `docs/REPLAY.md` first: a replayed region never falls back to generated results. |
 | `src/mask.js` | Masks credentials in request bodies before they reach the call log, database or UI. Keep new request paths going through it. |
 | `public/index.html` | The whole web UI (one file, no build step). |
+| `public/render.html`, `public/vendor/usx-parsing-embed.js` | The Records tab's **Render** view: one replay record shown the way Universal Search would, through the USx Parsing view. The vendor file is built in Gordon's `Projects/USx-Parsing` (`tools/build-embed.js`); never edit it here, copy a new build in. |
 | `prismatic/` | The two Prismatic Code steps (gateway, delivery) and their build guide. |
 | `scripts/check-fidelity.mjs` | Measures our results against the real Federated Search source. |
 | `test/` | `node:test` suites. They run the real Prismatic step code against a real server instance. |
