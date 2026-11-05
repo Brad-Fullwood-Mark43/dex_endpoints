@@ -11,7 +11,7 @@ import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
 import { replays, setRegionReplays, mergeRegionReplays, clearRegionReplays, updateReplay, deleteReplay } from './store.js';
-import { validatePack } from './replay.js';
+import { validatePack, replayHasHit } from './replay.js';
 import { createTcpServer } from './tcp-server.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -153,7 +153,7 @@ export function createApp() {
   });
 
   // Replay packs (docs/REPLAY.md): captured, scrubbed reply sets for one USx region. Upload replaces that region only.
-  app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length, sources: r.replies.map((x) => x.dataSource || ''), photos: r.replies.filter((x) => x.attachedImage || /<ImageData>/.test(x.response || '')).length, certified: r.certified !== false, edited: !!r.edited }))));
+  app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length, sources: r.replies.map((x) => x.dataSource || ''), photos: r.replies.filter((x) => x.attachedImage || /<ImageData>/.test(x.response || '')).length, certified: r.certified !== false, edited: !!r.edited, hit: replayHasHit(r) }))));
   // One replay record, for the Records tab editor. Saving re-validates it like an uploaded pack; id and region are fixed.
   app.get('/api/replay-records/:id', (req, res) => { const r = replays().find((x) => x.id === req.params.id); return r ? res.json(r) : res.status(404).json({ error: 'Not found' }); });
   app.put('/api/replay-records/:id', (req, res) => {

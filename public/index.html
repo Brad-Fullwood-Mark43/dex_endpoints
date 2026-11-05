@@ -300,7 +300,7 @@ function renderReplayList() {
       ${list.map((r) => {
         const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
         const st = r.match.State || region.slice(0, 2);
-        return `<div class="rec" data-replay="${esc(r.id)}"><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span><span class="n">${esc(replayLabel(r.match))}</span><span class="muted">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
+        return `<div class="rec" data-replay="${esc(r.id)}"><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
       }).join('')}`;
   }).join('');
 }

@@ -1,7 +1,7 @@
 // Replay matching and frame building (src/replay.js). Synthetic fixtures only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack } from '../src/replay.js';
+import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack, replayHasHit } from '../src/replay.js';
 
 const req = (fields, { id = '01ABCDEFGHJKMNPQRSTVWXYZ00', ori = 'XX1000001', type = 'DriverLicenseQuery' } = {}) =>
   `<LawEnforcementTransaction version="1.0"><Session><Id>DEV01</Id><Authentication><UserName>TESTUSER</UserName><ORI>${ori}</ORI></Authentication></Session>` +
@@ -99,6 +99,15 @@ test('replayFrames: a full CommSys envelope (ConnectCICRequestId before Id) keep
   assert.equal((two.xml.match(/<Request>/g) || []).length, 2);
   assert.equal((two.xml.match(/<Id>NEWID<\/Id>/g) || []).length, 2);
   assert.doesNotMatch(two.xml, /OLDA|OLDB/);
+});
+
+test('replayHasHit: any reply with <Detected>1</Detected>; 0 or no envelope is not a hit', () => {
+  const r = (...responses) => rec({ kind: 'OLN', OperatorLicenseNumber: '1' }, responses.map((response) => ({ offsetMs: 0, response })));
+  assert.equal(replayHasHit(r('<Response><Hit><Details>NCIC</Details><Detected>0</Detected></Hit></Response>', '<Response><Hit><Detected>1</Detected></Hit></Response>')), true);
+  assert.equal(replayHasHit(r('<Response><Hit><Details/><Detected> 1 </Detected></Hit></Response>')), true);
+  assert.equal(replayHasHit(r('<Response><Hit><Detected>0</Detected></Hit></Response>')), false);
+  assert.equal(replayHasHit(r('<Response><MessageData>WANTED DETECTED 1</MessageData></Response>')), false);
+  assert.equal(replayHasHit(r('<Response><Hit><Detected>10</Detected></Hit></Response>')), false);
 });
 
 test('validatePack rejects malformed packs', () => {

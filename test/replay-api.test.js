@@ -26,7 +26,7 @@ const pack = {
 test('a replay record can be listed, opened, edited and deleted; id and region never change', async () => {
   assert.equal((await call('POST', '/api/replays', pack)).status, 200);
   const [summary] = (await call('GET', '/api/replays')).json;
-  assert.deepEqual([summary.id, summary.replies, summary.photos, summary.edited, summary.certified], ['replay-xx-1', 1, 1, false, true]);
+  assert.deepEqual([summary.id, summary.replies, summary.photos, summary.edited, summary.certified, summary.hit], ['replay-xx-1', 1, 1, false, true, false]);
   assert.deepEqual(summary.sources, ['OSW']);
 
   const rec = (await call('GET', '/api/replay-records/replay-xx-1')).json;
@@ -36,6 +36,11 @@ test('a replay record can be listed, opened, edited and deleted; id and region n
   assert.equal(put.json.id, 'replay-xx-1');
   assert.equal(put.json.region, 'XX_TEST');
   assert.equal(put.json.edited, true);
+  // the HIT flag follows the replies: an edit that adds <Detected>1</Detected> turns it on
+  const hitRec = { ...rec, replies: [{ ...rec.replies[0], response: '<Response><Hit><Details>NCIC</Details><Detected>1</Detected></Hit><MessageData>TEST</MessageData></Response>' }] };
+  assert.equal((await call('PUT', '/api/replay-records/replay-xx-1', hitRec)).status, 200);
+  assert.equal((await call('GET', '/api/replays')).json[0].hit, true);
+  assert.equal((await call('PUT', '/api/replay-records/replay-xx-1', rec)).status, 200);
   assert.equal(put.json.replies[0].attachedImage, '/9j/AAAA');
   assert.equal((await call('GET', '/api/replays')).json[0].edited, true);
 

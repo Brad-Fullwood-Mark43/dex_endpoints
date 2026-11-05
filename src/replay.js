@@ -113,6 +113,14 @@ export function replayFrames(record, requestId) {
   });
 }
 
+/**
+ * Does a replay record report a hit? True when any of its captured replies has <Hit><Detected>1</Detected></Hit> (the
+ * CommSys envelope's hit flag). Text-only replies have no envelope, so they never count.
+ */
+export function replayHasHit(record) {
+  return (record.replies || []).some((x) => /<Detected>\s*1\s*<\/Detected>/i.test(x.response || ''));
+}
+
 /** Checks an uploaded replay pack before it is stored. Returns a list of problems (empty = valid). */
 export function validatePack(pack) {
   const problems = [];
