@@ -165,3 +165,69 @@ export function validatePack(pack) {
   });
   return problems;
 }
+
+/**
+ * Query catalog (docs/REPLAY.md "Query catalog"): a plate query for X1X1, any state, from a device whose ORI maps to a
+ * region gets one reply listing every query that region can answer from its replay records. Testers search X1X1 to find
+ * out what to search for.
+ */
+export const CATALOG_PLATE = 'X1X1';
+export function isCatalogRequest(request) {
+  return up(request?.fields?.LicensePlateNumber).replace(/[^A-Z0-9]/g, '') === CATALOG_PLATE;
+}
+
+const xmlText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const mdy = (v) => { const d = ymd(v); return /^\d{8}$/.test(d) ? `${d.slice(4, 6)}/${d.slice(6)}/${d.slice(0, 4)}` : String(v ?? ''); };
+
+/** The catalog text: one section per query kind, one line per distinct query, in the order a tester would type them. */
+export function catalogText(replays, region) {
+  const home = region.slice(0, 2);
+  const recs = replays.filter((r) => r.region === region && r.certified !== false);
+  const where = (s) => (!up(s) || up(s) === home ? `State ${home} or blank` : `State ${up(s)}`);
+  const extra = (r) => `${r.replies.length} repl${r.replies.length === 1 ? 'y' : 'ies'}${replayHasHit(r) ? '  HIT' : ''}`;
+  const kinds = [
+    ['OLN', 'PERSON BY DRIVER LICENSE', (m) => `OLN ${up(m.OperatorLicenseNumber)}  ${where(m.State)}`],
+    ['NAME_DOB', 'PERSON BY NAME / DOB', (m) => `${up(m.NameLast)}, ${up(m.NameFirst)}${m.NameMiddle ? ' ' + up(m.NameMiddle) : ''}  DOB ${mdy(m.BirthDate)}${m.SexCode ? '  Sex ' + up(m.SexCode) : ''}  ${where(m.State)}`],
+    ['PLATE', 'VEHICLE BY PLATE', (m) => `Plate ${up(m.LicensePlateNumber)}  ${where(m.State)}`],
+    ['VIN', 'VEHICLE BY VIN', (m) => `VIN ${up(m.VehicleIdentificationNumber)}`],
+  ];
+  const out = [`RAILWAY TEST QUERIES - ${region}`, `${recs.length} captured quer${recs.length === 1 ? 'y' : 'ies'}. Search one of these from a device whose ORI maps to ${region}.`];
+  if (!recs.length) out.push('', 'No replay records are loaded for this region yet.');
+  for (const [kind, title, line] of kinds) {
+    const lines = new Map();
+    for (const r of recs.filter((x) => x.match?.kind === kind)) {
+      const l = line(r.match);
+      if (!lines.has(l) || lines.get(l).replies.length < r.replies.length) lines.set(l, r);
+    }
+    if (!lines.size) continue;
+    out.push('', `${title} (${lines.size})`);
+    for (const [l, r] of [...lines].sort((a, b) => a[0].localeCompare(b[0]))) out.push(`  ${l}  (${extra(r)})`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The catalog as a replay record, so it is sent and logged like any replay. The envelope is one of the region's own
+ * captured full-envelope replies (its Class, System and interface names, so Universal Search parses it the way it
+ * parses that region), with the catalog as MessageData, no hit and no image. A region with no captured envelope gets
+ * the plain envelope the captures share.
+ */
+export function catalogRecord(replays, region) {
+  const plain = (r) => r.fullEnvelope && /<MessageData>/.test(r.response || '') && !/<(LicensePlateNumber|Name|OperatorLicenseNumber|VehicleIdentificationNumber)>/.test(r.response);
+  const all = replays.filter((r) => r.region === region).flatMap((r) => r.replies || []);
+  // Prefer a neutral message class (TX_TLETS Nlets "Response", LA_LEMS OSW "Accept"); NoRecord or Unknown could make
+  // Universal Search show the list as "no record" or unparsed.
+  const cls = (r) => (/<Class>([^<]*)<\/Class>/.exec(r.response) || [])[1];
+  const template = all.find((r) => plain(r) && /^(Response|Accept)$/.test(cls(r)))
+    || all.find((r) => plain(r) && !/^(NoRecord|Unknown)$/.test(cls(r))) || all.find(plain)
+    || all.find((r) => r.fullEnvelope && /<MessageData>/.test(r.response || ''));
+  const text = xmlText(catalogText(replays, region));
+  const response = template
+    ? template.response
+      .replace(/<MessageData>[\s\S]*?<\/MessageData>/, `<MessageData>${text}</MessageData>`)
+      .replace(/<Detected>[^<]*<\/Detected>/, '<Detected>0</Detected>')
+      .replace(/<Image>[\s\S]*?<\/Image>/, '<Image/>')
+    : `<Response><Class>Accept</Class><CurrentDataBlock>1</CurrentDataBlock><Hit><Details></Details><Detected>0</Detected></Hit><Image/><MessageData>${text}</MessageData><Request><Id></Id></Request><System>RAILWAY</System></Response>`;
+  return { id: `catalog-${region.toLowerCase()}`, type: 'replay', region, certified: true, entityType: 'VEHICLE',
+    match: { kind: 'CATALOG', LicensePlateNumber: CATALOG_PLATE }, replies: [{ offsetMs: 500, dataSource: 'RAILWAY', fullEnvelope: true, response }] };
+}

@@ -1,7 +1,7 @@
 // Replay matching and frame building (src/replay.js). Synthetic fixtures only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack, replayHasHit } from '../src/replay.js';
+import { readRequest, regionForOri, matches, findReplay, replayFrames, validatePack, replayHasHit, isCatalogRequest, catalogText, catalogRecord } from '../src/replay.js';
 
 const req = (fields, { id = '01ABCDEFGHJKMNPQRSTVWXYZ00', ori = 'XX1000001', type = 'DriverLicenseQuery' } = {}) =>
   `<LawEnforcementTransaction version="1.0"><Session><Id>DEV01</Id><Authentication><UserName>TESTUSER</UserName><ORI>${ori}</ORI></Authentication></Session>` +
@@ -120,4 +120,39 @@ test('validatePack rejects malformed packs', () => {
   assert.deepEqual(validatePack({ records: [rec({ kind: 'OLN', OperatorLicenseNumber: '1' })] }), []);
   assert.ok(validatePack({}).length);
   assert.ok(validatePack({ records: [{ type: 'replay', region: 'x', match: { kind: 'NOPE' }, replies: [] }] }).length >= 3);
+});
+
+test('query catalog: X1X1 (any state, any spacing) asks for it; the list covers the region only, one line per query', () => {
+  assert.ok(isCatalogRequest(readRequest(req({ LicensePlateNumber: 'x1x1', State: 'ZZ' }))));
+  assert.ok(isCatalogRequest(readRequest(req({ LicensePlateNumber: 'X1 X1' }))));
+  assert.ok(!isCatalogRequest(readRequest(req({ LicensePlateNumber: 'X1X12' }))));
+  assert.ok(!isCatalogRequest(readRequest(req({ OperatorLicenseNumber: 'X1X1' }))));
+
+  const env = (cls, text, extra = '') => `<Response><Class>${cls}</Class><Hit><Details></Details><Detected>1</Detected></Hit><Image><ImageData>/9j/AAAA</ImageData></Image>${extra}<MessageData>${text}</MessageData><Request><Id>OLD</Id></Request><System>SYS</System></Response>`;
+  const full = (cls, text, extra) => [{ offsetMs: 1000, fullEnvelope: true, response: env(cls, text, extra) }];
+  const recs = [
+    rec({ kind: 'OLN', OperatorLicenseNumber: 'T1234567', State: null }, full('NoRecord', 'NO RECORD')),
+    rec({ kind: 'NAME_DOB', NameLast: 'SAMPLE', NameFirst: 'ALEX', NameMiddle: 'B', BirthDate: '19850630', SexCode: 'M', State: 'ZZ' }, full('Response', 'TEST')),
+    rec({ kind: 'PLATE', LicensePlateNumber: 'TEST01', State: null }, full('VehicleRegistration', 'TEST', '<LicensePlateNumber>TEST01</LicensePlateNumber>')),
+    rec({ kind: 'PLATE', LicensePlateNumber: 'TEST01', State: null }),
+    rec({ kind: 'VIN', VehicleIdentificationNumber: 'OTHERREGION0001' }, undefined, 'YY_TEST'),
+  ];
+  const text = catalogText(recs, 'XX_TEST');
+  assert.match(text, /RAILWAY TEST QUERIES - XX_TEST/);
+  assert.match(text, /PERSON BY DRIVER LICENSE \(1\)\n  OLN T1234567  State XX or blank/);
+  assert.match(text, /SAMPLE, ALEX B  DOB 06\/30\/1985  Sex M  State ZZ  \(1 reply  HIT\)/);
+  assert.match(text, /VEHICLE BY PLATE \(1\)\n  Plate TEST01/);
+  assert.doesNotMatch(text, /OTHERREGION|VEHICLE BY VIN/);
+  assert.match(catalogText([], 'XX_TEST'), /No replay records are loaded/);
+
+  const c = catalogRecord(recs, 'XX_TEST');
+  assert.equal(c.entityType, 'VEHICLE');
+  const resp = c.replies[0].response;
+  assert.match(resp, /<Class>Response<\/Class>/); // the neutral captured envelope, not NoRecord or a data class
+  assert.match(resp, /<Detected>0<\/Detected>/);
+  assert.match(resp, /<Image\/>/);
+  assert.doesNotMatch(resp, /ImageData/);
+  const [frame] = replayFrames(c, 'NEWID_VEHICLE');
+  assert.match(frame.xml, /<Request><Id>NEWID_VEHICLE<\/Id><\/Request>/);
+  assert.match(catalogRecord([], 'XX_TEST').replies[0].response, /No replay records are loaded/);
 });

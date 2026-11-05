@@ -11,7 +11,7 @@
 import net from 'node:net';
 import { processRequest, bus, recordReplay, recordReplayDelivery } from './engine.js';
 import { settings, replays } from './store.js';
-import { readRequest, regionForOri, findReplay, replayFrames } from './replay.js';
+import { readRequest, regionForOri, findReplay, replayFrames, isCatalogRequest, catalogRecord } from './replay.js';
 import { FrameDecoder, FrameType, encodeFrame, isAckRequired, isEncrypted } from './tcp-frame.js';
 import { toEnvelope, toBareResult } from './tcp-adapter.js';
 
@@ -107,12 +107,14 @@ export function createTcpServer({ heartbeatMs = 30000, allowIps = [], maxConnect
       const request = readRequest(loggedBody);
       const map = settings().regionByOri || {};
       const region = request ? regionForOri(request.ori, map) : null;
-      if (region && replays().some((r) => r.region === region)) {
+      // Query catalog: plate X1X1 (any state) from a mapped device lists what its region can answer, even with no replays yet.
+      const catalog = region && isCatalogRequest(request);
+      if (region && (catalog || replays().some((r) => r.region === region))) {
         const reason = map[String(request.ori || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] ? 'ori' : 'state';
-        const replay = findReplay(replays(), region, request);
+        const replay = catalog ? catalogRecord(replays(), region) : findReplay(replays(), region, request);
         const txn = recordReplay({ loggedBody, request, region, regionReason: reason, replay });
         if (wantsAck) send({ type: FrameType.ACK, ackId: frame.ackId });
-        clog(`query received (request bytes=${frame.body.length} id=${request.id} region=${region} by ${reason}); ${replay ? `replaying ${replay.replies.length} captured repl${replay.replies.length === 1 ? 'y' : 'ies'} (${replay.id})` : 'no captured reply set matches, ACK only'}`);
+        clog(`query received (request bytes=${frame.body.length} id=${request.id} region=${region} by ${reason}); ${catalog ? 'query catalog requested, ' : ''}${replay ? `replaying ${replay.replies.length} captured repl${replay.replies.length === 1 ? 'y' : 'ies'} (${replay.id})` : 'no captured reply set matches, ACK only'}`);
         if (replay) {
           const frames = replayFrames(replay, request.id);
           for (let i = 0; i < frames.length; i++) {

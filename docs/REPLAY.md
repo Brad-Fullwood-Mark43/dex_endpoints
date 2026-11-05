@@ -44,6 +44,20 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
   The agent doesn't read it.
 - **Failure modes** (`ackMode`, `resultMode`) don't apply to replayed regions; captured behaviour is what you get.
 
+## Query catalog (plate X1X1)
+
+A vehicle plate query for `X1X1` (any state, case and spaces ignored) from a device whose ORI maps to a region (see
+`regionByOri`) is not matched against the records. Instead it gets one reply listing every query that region can answer:
+OLN, name / DOB, plate and VIN sections, one line per distinct query, with the State to send (`TX or blank` = in-state),
+the number of replies and `HIT` when a reply carries `<Detected>1</Detected>`. Testers search X1X1 to see what to search.
+
+- The reply uses one of the region's own captured full envelopes (a neutral `Response` / `Accept` class first, never a
+  data class), with the list as `MessageData`, `<Detected>0</Detected>` and no image, so Universal Search parses it the
+  way it parses that region. A mapped region with no replays yet gets a plain envelope saying none are loaded.
+- The call log shows it as VEHICLE, replay id `catalog-<region>`, `CATALOG replay`.
+- An unmapped ORI is not a region, so X1X1 from it goes to the generated pipeline like any other query.
+- Code: `isCatalogRequest`, `catalogText`, `catalogRecord` in `src/replay.js`; wired in `src/tcp-server.js`.
+
 ## Packs
 
 A pack is one region's records, built outside this repo from scrubbed captures (Gordon's `Projects/USx-Railway-Mock`, steps
