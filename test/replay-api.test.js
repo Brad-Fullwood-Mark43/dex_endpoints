@@ -79,3 +79,26 @@ test('import (mode=merge) adds to the region, replaces the same query, keeps the
   assert.equal((await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', records: [big] })).status, 200);
   assert.equal((await call('POST', '/api/replays?mode=merge', { region: 'YY_TEST', records: [{ type: 'nope' }] })).status, 400);
 });
+
+test('export: a region downloads as a pack that imports back unchanged; the state lists the USx regions', async () => {
+  const rec = { id: 'replay-ex-1', type: 'replay', region: 'TN_TIES', certified: true, entityType: 'PERSON',
+    match: { kind: 'OLN', OperatorLicenseNumber: 'T7654321', State: null },
+    replies: [{ offsetMs: 500, dataSource: 'OSW', fullEnvelope: false, response: '<Response><MessageData>TEST</MessageData></Response>' }] };
+  assert.equal((await call('POST', '/api/replays?mode=merge', { region: 'TN_TIES', testOri: 'TN1000001', records: [rec] })).status, 200);
+
+  const r = await fetch(`${base}/api/replays/TN_TIES/pack`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-disposition'), /^attachment; filename="TN_TIES-\d{8}T\d{4}Z\.json"$/);
+  const exported = await r.json();
+  assert.deepEqual([exported.region, exported.testOri, exported.records.length, exported.records[0].id], ['TN_TIES', 'TN1000001', 1, 'replay-ex-1']);
+
+  assert.equal((await call('DELETE', '/api/replays/TN_TIES')).status, 200);
+  assert.equal((await call('GET', '/api/replays/TN_TIES/pack')).status, 404);
+  assert.equal((await call('POST', '/api/replays?mode=merge', exported)).status, 200);
+  assert.deepEqual((await call('GET', '/api/replay-records/replay-ex-1')).json.match, rec.match);
+
+  const { usxRegions } = (await call('GET', '/api/state')).json;
+  assert.equal(usxRegions.length, 21);
+  assert.deepEqual(usxRegions.find((x) => x.id === 'TX_TLETS_CCH'), { id: 'TX_TLETS_CCH', testOri: 'TX2000001' });
+  assert.equal((await call('DELETE', '/api/replays/TN_TIES')).status, 200);
+});

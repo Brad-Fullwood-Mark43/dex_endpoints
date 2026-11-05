@@ -31,6 +31,28 @@ export function readRequest(xml) {
 }
 
 /** The region for a device ORI: exact ORI, then its two-letter state prefix, then null. */
+/**
+ * The USx regions a replay pack can be made for (id = USx provider name), each with its test ORI. The ORIs are invented
+ * test values, never a real agency's; a pack's testOri is mapped to its region on first import. The USx Railway Capture
+ * extension uses the same list. CA and TX have several providers, so their test ORIs are matched exactly.
+ */
+export const USX_REGIONS = [
+  ['AZ_AZDPS', 'AZ1000001'], ['CA_CLETS', 'CA1000001'], ['CA_CLETS_OCATS', 'CA2000001'], ['CA_CONTRA_COSTA', 'CA3000001'],
+  ['CA_eSUN', 'CA4000001'], ['CA_SAN_LUIS_OBISPO', 'CA5000001'], ['CA_VENTURA_COUNTY', 'CA6000001'], ['FL_FCIC', 'FL1000001'],
+  ['HI_HCJDC_OFML', 'HI1000001'], ['IL_LEADS_OFML', 'IL1000001'], ['LA_LEMS', 'LA1000001'], ['MD_METERS', 'MD1000001'],
+  ['NJ_NJCJIS', 'NJ1000001'], ['NM_NMLETS_OFML', 'NM1000001'], ['NY_NYSPIN_EJUSTICE', 'NY1000001'], ['OH_LEADS', 'OH1000001'],
+  ['OR_LEDS', 'OR1000001'], ['SC_SLED', 'SC1000001'], ['TN_TIES', 'TN1000001'], ['TX_TLETS', 'TX1000001'], ['TX_TLETS_CCH', 'TX2000001'],
+].map(([id, testOri]) => ({ id, testOri }));
+
+/** A region's replay records as a pack that POST /api/replays accepts again (the Records tab's Export pack). */
+export function regionPack(records, region, regionByOri = {}) {
+  const list = records.filter((r) => r.region === region);
+  const testOri = Object.entries(regionByOri).find(([k, v]) => v === region && k.length === 9)?.[0]
+    || USX_REGIONS.find((r) => r.id === region)?.testOri || null;
+  return { format: 'dex_endpoints replay pack v1', region, testOri, built: new Date().toISOString(),
+    source: 'exported from the Records tab (records as stored, edits included)', records: list };
+}
+
 export function regionForOri(ori, regionByOri = {}) {
   const o = up(ori).replace(/[^A-Z0-9]/g, '');
   if (!o) return null;

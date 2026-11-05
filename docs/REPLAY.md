@@ -53,6 +53,7 @@ POST   /api/replays            body: the pack JSON  -> replaces that region's re
 POST   /api/replays?mode=merge same body             -> adds to the region; a record with the same id or match replaces
                                                         the old one; the region's other records stay
 GET    /api/replays            summary: id, region, entityType, match, reply counts
+GET    /api/replays/:region/pack the region's records as a re-importable pack (download <region>-<UTC>.json; 404 if none)
 DELETE /api/replays/:region    removes a region's replay records
 GET    /api/replay-records/:id one full replay record (the Records tab editor)
 PUT    /api/replay-records/:id replaces one record (validated like a pack; id and region fixed; marked edited: true)
@@ -64,7 +65,11 @@ replies, scrubbed in the browser) are imported with **Import replay pack** on th
 Either upload maps the pack's `testOri` to its region when that ORI isn't mapped yet (an existing mapping is never
 changed). The replay routes accept up to 25 MB (photos); the rest of `/api` keeps its 2 MB limit.
 
-The Records tab lists replays in their own section per region, below the synthetic records, with kind, state, reply count,
+The Records tab shows one set at a time, chosen under **Show**: the original (synthetic) records, a region with replays, or
+one of the USx regions with none yet (`USX_REGIONS` in `src/replay.js`, each with its invented test ORI, sent as
+`usxRegions` in `/api/state`). A region view has **Import replay pack** (it refuses a pack for a different region),
+**Export pack** (`GET /api/replays/:region/pack`), a summary, filters (query type, source, HIT only, search) and
+**Delete all <region> replays**. Each replay row shows kind, state, reply count,
 photo, envelope (full / text only) and EDITED tags, and a red HIT tag after the state when any reply has
 <Hit><Detected>1</Detected></Hit> (`replayHasHit` in `src/replay.js`, worked out on every listing, so uploads, imports and edits
 are always reflected; text-only replies have no envelope and never count). The editor is the same JSON editor; blurred photos show as a placeholder

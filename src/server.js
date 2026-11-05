@@ -11,7 +11,7 @@ import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
 import { replays, setRegionReplays, mergeRegionReplays, clearRegionReplays, updateReplay, deleteReplay } from './store.js';
-import { validatePack, replayHasHit } from './replay.js';
+import { validatePack, replayHasHit, regionPack, USX_REGIONS } from './replay.js';
 import { createTcpServer } from './tcp-server.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +117,7 @@ export function createApp() {
       entityTypes: ENTITY_TYPES,
       matchKeys: MATCH_KEYS,
       regions: listRegions(),
+      usxRegions: USX_REGIONS,
       config: { apiKeySet: !!API_KEY, adminPasswordSet: !!ADMIN_PASSWORD, receiverEnabled: !!RECEIVER_TOKEN, allowRequestResponseUrl: process.env.ALLOW_REQUEST_RESPONSE_URL === 'true' },
     }),
   );
@@ -182,6 +183,13 @@ export function createApp() {
       else if (map[ori] !== region) out.oriConflict = `${ori} is mapped to ${map[ori]}, not ${region}: left as is`;
     }
     res.json(out);
+  });
+  // Export: the region's records as a re-importable pack, downloaded as <region>-<UTC>.json.
+  app.get('/api/replays/:region/pack', (req, res) => {
+    const pack = regionPack(replays(), req.params.region, settings().regionByOri || {});
+    if (!pack.records.length) return res.status(404).json({ error: `no replays for ${req.params.region}` });
+    const stamp = pack.built.replace(/[-:]/g, '').slice(0, 13);
+    res.set('content-disposition', `attachment; filename="${req.params.region.replace(/[^\w-]/g, '')}-${stamp}Z.json"`).json(pack);
   });
   app.delete('/api/replays/:region', (req, res) => res.json({ region: req.params.region, removed: clearRegionReplays(req.params.region) }));
   app.post('/api/records', (req, res) => res.json(upsertRecord(req.body ?? {})));

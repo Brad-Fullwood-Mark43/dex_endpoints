@@ -35,6 +35,7 @@
   @media (prefers-color-scheme: dark) { .p-red { color: #fecaca; } }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { background: none; border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  a.btnlink { border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; color: inherit; text-decoration: none; }
   button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
   button.danger { color: var(--red); } button:disabled { opacity: .5; cursor: not-allowed; }
   input, select, textarea { background: var(--card); border: 1px solid var(--stroke); border-radius: 6px; padding: 6px 8px; width: 100%; }
@@ -95,7 +96,7 @@
 </main>
 
 <script>
-const S = { settings: {}, regions: [], records: [], replays: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null, recView: null, rf: { kind: '', source: '', hit: false, q: '' } };
+const S = { settings: {}, regions: [], records: [], replays: [], usxRegions: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null, recView: null, rf: { kind: '', source: '', hit: false, q: '' } };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const api = async (method, url, body) => {
@@ -269,14 +270,24 @@ const TEMPLATE = (type) => ({
 // The tab shows one set at a time: the original (synthetic, hand-made) records, or one region's captured replays.
 // The choice is kept in localStorage so a reload stays on the same set.
 const ORIGINAL = 'original';
+// Regions with replays first, then the USx regions still waiting for captures (they can be picked to import into).
 function recViews() {
   const n = {};
   S.replays.forEach((r) => { n[r.region] = (n[r.region] || 0) + 1; });
-  return [[ORIGINAL, `Original records (${S.records.length})`], ...Object.keys(n).sort().map((k) => [k, `${k} replays (${n[k]})`])];
+  const withData = Object.keys(n).sort().map((k) => [k, `${k} · ${n[k]} replay${n[k] === 1 ? '' : 's'}`]);
+  const empty = S.usxRegions.filter((r) => !n[r.id]).map((r) => [r.id, `${r.id} · test ORI ${r.testOri}`]);
+  return { original: [ORIGINAL, `Original records (${S.records.length})`], withData, empty };
 }
 function recView() {
   const v = S.recView || localStorage.getItem('recView') || ORIGINAL;
-  return recViews().some(([k]) => k === v) ? v : ORIGINAL;
+  const { withData, empty } = recViews();
+  return [...withData, ...empty].some(([k]) => k === v) ? v : ORIGINAL;
+}
+function recViewOptions(view) {
+  const { original, withData, empty } = recViews();
+  const opt = ([k, l]) => `<option value="${esc(k)}" ${k === view ? 'selected' : ''}>${esc(l)}</option>`;
+  return opt(original) + (withData.length ? `<optgroup label="Replay regions">${withData.map(opt).join('')}</optgroup>` : '')
+    + (empty.length ? `<optgroup label="No replays yet">${empty.map(opt).join('')}</optgroup>` : '');
 }
 function setRecView(v) {
   S.recView = v; localStorage.setItem('recView', v);
@@ -296,8 +307,9 @@ function renderRecords() {
   el.innerHTML = `<div class="row" style="align-items:flex-start">
     <div class="panel" style="flex:1">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
-        <div style="flex:1;min-width:220px"><label>Show</label><select id="rec-view">${recViews().map(([k, l]) => `<option value="${esc(k)}" ${k === view ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
-        <button id="pack-btn" title="A USx Railway Capture export: adds to its region, replacing the same query; the region's other replays stay.">Import replay pack</button><input type="file" id="pack-file" accept=".json,application/json" class="hide" />
+        <div style="flex:1;min-width:220px"><label>Show</label><select id="rec-view">${recViewOptions(view)}</select></div>
+        ${view === ORIGINAL ? '' : `<button id="pack-btn" title="A USx Railway Capture export for ${esc(view)}: adds to the region, replacing the same query; the region's other replays stay.">Import replay pack</button><input type="file" id="pack-file" accept=".json,application/json" class="hide" />
+        ${regionReplays(view).length ? `<a class="btnlink" href="/api/replays/${encodeURIComponent(view)}/pack" download title="Download ${esc(view)}'s replays as a pack that Import replay pack accepts again">Export pack</a>` : ''}`}
       </div>
       <div id="pack-msg" class="muted" style="margin-bottom:6px"></div>
       ${view === ORIGINAL ? renderOriginalList() : renderReplayRegion(view)}</div>
@@ -320,6 +332,10 @@ function renderReplayRegion(region) {
   const all = regionReplays(region);
   const oris = Object.entries(S.settings.regionByOri || {}).filter(([, v]) => v === region).map(([k]) => (k.length === 2 ? `any ${k}… ORI` : k)).join(' or ');
   const f = S.rf || (S.rf = { kind: '', source: '', hit: false, q: '' });
+  if (!all.length) {
+    const testOri = (S.usxRegions.find((r) => r.id === region) || {}).testOri;
+    return `<div class="empty">No captured replays for ${esc(region)} yet.<br><br>Make a pack with USx Railway Capture (region ${esc(region)}${testOri ? `, test ORI ${esc(testOri)}` : ''}), then use <b>Import replay pack</b> above.${oris ? `<br>Devices with ORI ${esc(oris)} get an acknowledgement only until then.` : testOri ? `<br>The first import maps device ORI ${esc(testOri)} to ${esc(region)}.` : ''}</div>`;
+  }
   const kinds = Object.keys(KIND).filter((k) => all.some((r) => r.match.kind === k));
   const sources = [...new Set(all.flatMap(sourcesOf))].sort();
   const count = (p) => all.filter(p).length;
@@ -479,6 +495,8 @@ document.addEventListener('change', async (e) => {
   try {
     const pack = JSON.parse(await file.text());
     const region = pack.region || (pack.records || [])[0]?.region || '?';
+    const view = recView();
+    if (region !== view) throw new Error(`this pack is for ${region}, not ${view}. Pick ${region} under Show, then import it there.`);
     if (!confirm(`Add ${(pack.records || []).length} captured replay(s) to ${region}?
 
 The same query already in ${region} is replaced; its other replays stay.`)) return;
@@ -504,7 +522,7 @@ document.addEventListener('change', async (e) => {
 
 async function refreshState() {
   const st = await api('GET', '/api/state');
-  Object.assign(S, { settings: st.settings, regions: st.regions || [], records: st.records, replays: await api('GET', '/api/replays'), txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
+  Object.assign(S, { settings: st.settings, regions: st.regions || [], records: st.records, replays: await api('GET', '/api/replays'), txns: st.transactions, usxRegions: st.usxRegions || [], entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
   S.settings.noRecordOnMiss = String(S.settings.noRecordOnMiss) === 'true' || S.settings.noRecordOnMiss === true;
 }
 
