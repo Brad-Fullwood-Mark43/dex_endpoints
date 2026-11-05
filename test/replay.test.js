@@ -44,16 +44,19 @@ test('OLN: case and leading zeros ignored; in-state means no State or the home s
 test('NAME_DOB: "LAST, FIRST M" or split name parts; middle by initial; DOB and sex must agree', () => {
   const r = rec({ kind: 'NAME_DOB', NameLast: 'SAMPLE', NameFirst: 'ALEX', NameMiddle: 'B', BirthDate: '19850630', SexCode: 'M', State: null });
   assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630', SexCode: 'M' })), 'XX'));
-  assert.ok(matches(r, readRequest(req({ Name: 'sample, alex bryan', BirthDate: '19850630' })), 'XX'));
-  assert.ok(matches(r, readRequest(req({ NameLast: 'Sample', NameFirst: 'Alex', BirthDate: '1985-06-30' })), 'XX'));
-  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX C', BirthDate: '19850630' })), 'XX'));
-  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850701' })), 'XX'));
+  assert.ok(matches(r, readRequest(req({ Name: 'sample, alex bryan', BirthDate: '19850630', SexCode: 'MALE' })), 'XX'));
+  // sex is required: none in the request, or none on the record, never matches
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630' })), 'XX'));
+  assert.ok(!matches(rec({ ...r.match, SexCode: null }), readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630', SexCode: 'M' })), 'XX'));
+  assert.ok(matches(r, readRequest(req({ NameLast: 'Sample', NameFirst: 'Alex', BirthDate: '1985-06-30', SexCode: 'M' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX C', BirthDate: '19850630', SexCode: 'M' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850701', SexCode: 'M' })), 'XX'));
   // MMDDYYYY (TX_TLETS request order) is the same date as the record's YYYYMMDD, and the other way round
-  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06301985' })), 'XX'));
-  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06-30-1985' })), 'XX'));
-  assert.ok(matches(rec({ ...r.match, BirthDate: '06301985' }), readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630' })), 'XX'));
-  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '07011985' })), 'XX'));
-  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '30061985' })), 'XX'));
+  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06301985', SexCode: 'M' })), 'XX'));
+  assert.ok(matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '06-30-1985', SexCode: 'M' })), 'XX'));
+  assert.ok(matches(rec({ ...r.match, BirthDate: '06301985' }), readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630', SexCode: 'M' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '07011985', SexCode: 'M' })), 'XX'));
+  assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '30061985', SexCode: 'M' })), 'XX'));
   assert.ok(!matches(r, readRequest(req({ Name: 'SAMPLE, ALEX', BirthDate: '19850630', SexCode: 'F' })), 'XX'));
 });
 
@@ -155,4 +158,14 @@ test('query catalog: X1X1 (any state, any spacing) asks for it; the list covers 
   const [frame] = replayFrames(c, 'NEWID_VEHICLE');
   assert.match(frame.xml, /<Request><Id>NEWID_VEHICLE<\/Id><\/Request>/);
   assert.match(catalogRecord([], 'XX_TEST').replies[0].response, /No replay records are loaded/);
+});
+
+test('a NAME_DOB record without SexCode is rejected; the catalog reply is labelled Mark43 TEST DATA Response', () => {
+  const bad = rec({ kind: 'NAME_DOB', NameLast: 'SAMPLE', NameFirst: 'ALEX', BirthDate: '19850630', SexCode: null, State: null });
+  assert.ok(validatePack({ records: [bad] }).some((p) => /needs match.SexCode/.test(p)));
+  assert.deepEqual(validatePack({ records: [{ ...bad, match: { ...bad.match, SexCode: 'F' } }] }), []);
+  assert.match(catalogText([bad], 'XX_TEST'), /Sex \(none: cannot match\)/);
+  const env = [{ offsetMs: 1, fullEnvelope: true, response: '<Response><Class>Response</Class><MessageData>T</MessageData><Request><Id>A</Id></Request><System>Nlets</System></Response>' }];
+  assert.match(catalogRecord([rec({ kind: 'OLN', OperatorLicenseNumber: 'T1', State: null }, env)], 'XX_TEST').replies[0].response, /<System>Mark43 TEST DATA Response<\/System>/);
+  assert.match(catalogRecord([], 'XX_TEST').replies[0].response, /<System>Mark43 TEST DATA Response<\/System>/);
 });

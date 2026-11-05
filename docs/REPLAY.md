@@ -32,7 +32,8 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
     leading 0); `State` equal, where in-state means no `<State>` (the agent sends none for in-state queries) or the home state.
   - `NAME_DOB`: `Name` (`LAST, FIRST M`) or `NameLast`/`NameFirst`; last and first equal; middle compared by initial only when
     both have one; `BirthDate` the same date, in either order (`YYYYMMDD` or `MMDDYYYY`, with or without `-`; TX_TLETS requests send
-    `MMDDYYYY`, packs store `YYYYMMDD`); `SexCode` equal when both have one; `State` as above.
+    `MMDDYYYY`, packs store `YYYYMMDD`); `SexCode` required in the request and the record and equal (first letter); a pack's NAME_DOB record without
+    `SexCode` is rejected; `State` as above.
   - `PLATE`: `LicensePlateNumber` equal (case-insensitive); `State` as above. Plate year and type are not matched.
   - `VIN`: `VehicleIdentificationNumber` equal.
   When several records match, the one with the most replies (then the most full envelopes) wins.
@@ -52,7 +53,8 @@ OLN, name / DOB, plate and VIN sections, one line per distinct query, with the S
 the number of replies and `HIT` when a reply carries `<Detected>1</Detected>`. Testers search X1X1 to see what to search.
 
 - The reply uses one of the region's own captured full envelopes (a neutral `Response` / `Accept` class first, never a
-  data class), with the list as `MessageData`, `<Detected>0</Detected>` and no image, so Universal Search parses it the
+  data class), with the list as `MessageData`, `<System>Mark43 TEST DATA Response</System>` (the source label USx shows),
+  `<Detected>0</Detected>` and no image, so Universal Search parses it the
   way it parses that region. A mapped region with no replays yet gets a plain envelope saying none are loaded.
 - The call log shows it as VEHICLE, replay id `catalog-<region>`, `CATALOG replay`.
 - An unmapped ORI is not a region, so X1X1 from it goes to the generated pipeline like any other query.
