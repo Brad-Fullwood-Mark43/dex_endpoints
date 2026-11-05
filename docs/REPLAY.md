@@ -52,7 +52,15 @@ extract → scrub → verify → pack). **Packs are never committed here**: they
 POST   /api/replays            body: the pack JSON  -> replaces that region's replay records (validated: validatePack)
 GET    /api/replays            summary: id, region, entityType, match, reply counts
 DELETE /api/replays/:region    removes a region's replay records
+GET    /api/replay-records/:id one full replay record (the Records tab editor)
+PUT    /api/replay-records/:id replaces one record (validated like a pack; id and region fixed; marked edited: true)
+DELETE /api/replay-records/:id removes one record
 ```
+
+The Records tab lists replays in their own section per region, below the synthetic records, with kind, state, reply count,
+photo, envelope (full / text only) and EDITED tags. The editor is the same JSON editor; blurred photos show as a placeholder
+and are put back on save. An edited record is no longer exactly as captured, hence the tag. Uploading the region's pack
+again replaces its records, edits included.
 
 Record shape:
 
@@ -78,4 +86,4 @@ Stored like records: Postgres `kv` key `replays`, or `store.json` without a data
 
 ## Not done
 
-- UI: replays aren't shown in the Records tab, and `regionByOri` has no editor yet (use `PUT /api/settings`).
+- UI: `regionByOri` has no editor yet (use `PUT /api/settings`).

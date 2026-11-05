@@ -10,7 +10,7 @@ import { ENTITY_TYPES, MATCH_KEYS, allowlist } from './matcher.js';
 import { recordsFromCsv } from './csv-import.js';
 import { buildAckXml, soapEnvelope } from './xml.js';
 import { listRegions, isRegion } from './regions.js';
-import { replays, setRegionReplays, clearRegionReplays } from './store.js';
+import { replays, setRegionReplays, clearRegionReplays, updateReplay, deleteReplay } from './store.js';
 import { validatePack } from './replay.js';
 import { createTcpServer } from './tcp-server.js';
 
@@ -151,7 +151,18 @@ export function createApp() {
   });
 
   // Replay packs (docs/REPLAY.md): captured, scrubbed reply sets for one USx region. Upload replaces that region only.
-  app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length }))));
+  app.get('/api/replays', (_req, res) => res.json(replays().map((r) => ({ id: r.id, region: r.region, entityType: r.entityType, match: r.match, replies: r.replies.length, fullEnvelope: r.replies.filter((x) => x.fullEnvelope).length, sources: r.replies.map((x) => x.dataSource || ''), photos: r.replies.filter((x) => x.attachedImage || /<ImageData>/.test(x.response || '')).length, certified: r.certified !== false, edited: !!r.edited }))));
+  // One replay record, for the Records tab editor. Saving re-validates it like an uploaded pack; id and region are fixed.
+  app.get('/api/replay-records/:id', (req, res) => { const r = replays().find((x) => x.id === req.params.id); return r ? res.json(r) : res.status(404).json({ error: 'Not found' }); });
+  app.put('/api/replay-records/:id', express.json({ limit: '20mb' }), (req, res) => {
+    const current = replays().find((x) => x.id === req.params.id);
+    if (!current) return res.status(404).json({ error: 'Not found' });
+    const rec = { ...(req.body ?? {}), id: current.id, region: current.region, type: 'replay' };
+    const problems = validatePack({ records: [rec] });
+    if (problems.length) return res.status(400).json({ error: 'invalid replay record', problems });
+    res.json(updateReplay(current.id, rec));
+  });
+  app.delete('/api/replay-records/:id', (req, res) => (deleteReplay(req.params.id) ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' })));
   app.post('/api/replays', express.json({ limit: '20mb' }), (req, res) => {
     const pack = req.body ?? {};
     const problems = validatePack(pack);

@@ -82,6 +82,26 @@ export function setRegionReplays(region, list) {
   return state.replays.filter((r) => r.region === region).length;
 }
 
+/**
+ * Replaces one replay record (edited in the UI). id and region can't change; the record is marked edited so the UI and the
+ * call log show it is no longer exactly as captured. Returns the stored record, or null if there is no such id.
+ */
+export function updateReplay(id, input) {
+  const i = state.replays.findIndex((r) => r.id === id);
+  if (i < 0) return null;
+  state.replays[i] = { ...input, id, region: state.replays[i].region, type: 'replay', edited: true, editedAt: new Date().toISOString() };
+  save();
+  return state.replays[i];
+}
+
+/** Removes one replay record. */
+export function deleteReplay(id) {
+  const before = state.replays.length;
+  state.replays = state.replays.filter((r) => r.id !== id);
+  if (state.replays.length !== before) save();
+  return before !== state.replays.length;
+}
+
 /** Removes one region's replay records. */
 export function clearRegionReplays(region) {
   const before = state.replays.length;

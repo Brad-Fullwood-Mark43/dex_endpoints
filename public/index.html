@@ -95,7 +95,7 @@
 </main>
 
 <script>
-const S = { settings: {}, regions: [], records: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
+const S = { settings: {}, regions: [], records: [], replays: [], txns: [], entityTypes: [], matchKeys: {}, config: {}, open: new Set(), rawOpen: new Set(), filter: null, tab: 'log', editing: null };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const api = async (method, url, body) => {
@@ -272,11 +272,56 @@ function renderRecords() {
   el.innerHTML = `<div class="row" style="align-items:flex-start">
     <div class="panel" style="flex:1"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${S.entityTypes.map((t) => `<button data-new="${t}">+ ${FRIENDLY[t]}</button>`).join('')}</div>
       ${S.records.map((r) => `<div class="rec" data-edit="${esc(r.id)}"><span class="pill p-grey">${esc(FRIENDLY[r.entityType])}</span><span class="n">${esc(r.name)}</span><span class="muted">${r.results.length} result${r.results.length === 1 ? '' : 's'}</span>${r.enabled === false ? '<span class="pill p-amber">OFF</span>' : ''}</div>`).join('') || '<div class="empty">No records</div>'}
-      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div></div>
-    <div class="panel" style="flex:1.4">${ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button id="csv-btn">Import CSV</button><input type="file" id="csv-file" accept=".csv,text/csv" class="hide" /><a href="/records-template.csv" download>Download CSV template</a><button id="bulk">Bulk import JSON</button><button class="danger" id="reset">Reset to seed</button></div><div id="csv-msg" class="muted" style="margin-top:6px"></div>
+      ${renderReplayList()}</div>
+    <div class="panel" style="flex:1.4">${ed && ed.replay ? replayEditor(ed) : ed ? `<label>Record (JSON). Matches on the keys under "match"; each entry in "results" is sent back as its own callback.</label>
       <textarea id="ed-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
       <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="ed-save">Save</button>${ed.data.id ? '<button class="danger" id="ed-del">Delete</button>' : ''}<span id="ed-msg" class="muted"></span></div>`
       : '<div class="empty">Select a record, or add a new one.</div>'}</div></div>`;
+}
+
+// Captured replays (docs/REPLAY.md): reply sets captured from a real CommSys and state switch, scrubbed, per USx region.
+// Kept apart from the records above: a region with replays answers only from them. Photos are blurred base64; the editor
+// shows a placeholder and puts the stored photo back on save.
+const PHOTO = '(blurred photo: kept as stored)';
+const replayLabel = (m) => m.kind === 'NAME_DOB' ? `${m.NameLast}, ${m.NameFirst}${m.NameMiddle ? ' ' + m.NameMiddle : ''} · ${m.BirthDate}${m.SexCode ? ' · ' + m.SexCode : ''}`
+  : m.OperatorLicenseNumber || m.LicensePlateNumber || m.VehicleIdentificationNumber || '';
+const KIND = { OLN: 'OLN', NAME_DOB: 'Name/DOB', PLATE: 'Plate', VIN: 'VIN' };
+function renderReplayList() {
+  if (!S.replays.length) return '';
+  const regions = [...new Set(S.replays.map((r) => r.region))].sort();
+  const oris = (region) => Object.entries(S.settings.regionByOri || {}).filter(([, v]) => v === region).map(([k]) => (k.length === 2 ? `any ${k}… ORI` : k)).join(' or ');
+  return regions.map((region) => {
+    const order = Object.keys(KIND);
+    const list = S.replays.filter((r) => r.region === region).sort((a, b) => order.indexOf(a.match.kind) - order.indexOf(b.match.kind) || replayLabel(a.match).localeCompare(replayLabel(b.match)));
+    return `<h3 style="margin-top:22px;padding-top:14px;border-top:2px solid var(--stroke)">Captured replays · ${esc(region)} <span class="pill p-blue">${list.length}</span></h3>
+      <div class="muted" style="margin-bottom:6px">Captured from a real CommSys and ${esc(region)} switch, scrubbed, photos blurred. Devices with ORI ${esc(oris(region) || '(none mapped: set regionByOri)')} are answered only from these.</div>
+      ${list.map((r) => {
+        const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
+        const st = r.match.State || region.slice(0, 2);
+        return `<div class="rec" data-replay="${esc(r.id)}"><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span><span class="n">${esc(replayLabel(r.match))}</span><span class="muted">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}</div>`;
+      }).join('')}`;
+  }).join('');
+}
+function replayForEditor(rec) {
+  const photos = rec.replies.map((x) => ({ attached: x.attachedImage || null, inline: [...String(x.response || '').matchAll(/<ImageData>([^<]*)<\/ImageData>/g)].map((m) => m[1]) }));
+  const view = structuredClone(rec);
+  view.replies.forEach((x) => { if (x.attachedImage) x.attachedImage = PHOTO; x.response = String(x.response || '').replace(/<ImageData>[^<]*<\/ImageData>/g, `<ImageData>${PHOTO}</ImageData>`); });
+  return { view, photos };
+}
+function replayFromEditor(view, photos) {
+  view.replies.forEach((x, j) => {
+    const p = photos[j] || { attached: null, inline: [] };
+    if (x.attachedImage === PHOTO) x.attachedImage = p.attached;
+    let k = 0;
+    x.response = String(x.response || '').replace(new RegExp(`<ImageData>${PHOTO.replace(/[()]/g, '\\$&')}</ImageData>`, 'g'), () => `<ImageData>${p.inline[k++] ?? ''}</ImageData>`);
+  });
+  return view;
+}
+function replayEditor(ed) {
+  return `<label>Captured replay (JSON). "match" is the query that triggers it; each entry in "replies" is one CommSys &lt;Response&gt;, sent in order at "offsetMs". Saving marks it EDITED. Photos show as a placeholder and are kept (don't reorder replies that carry one). Re-uploading the region's pack replaces edits.</label>
+      <textarea id="rp-json" rows="26">${esc(JSON.stringify(ed.data, null, 2))}</textarea>
+      <div style="margin-top:8px;display:flex;gap:6px"><button class="primary" id="rp-save">Save</button><button class="danger" id="rp-del">Delete</button><span id="rp-msg" class="muted"></span></div>`;
 }
 
 // ---- Settings tab
@@ -332,6 +377,18 @@ document.addEventListener('click', async (e) => {
       await refreshState(); S.editing = { data: saved }; renderRecords(); $('#ed-msg').textContent = 'Saved';
     } catch (err) { $('#ed-msg').textContent = err.message; }
   }
+  const rp = t.closest('[data-replay]');
+  if (rp) { const { view, photos } = replayForEditor(await api('GET', `/api/replay-records/${encodeURIComponent(rp.dataset.replay)}`)); S.editing = { replay: true, data: view, photos }; return renderRecords(); }
+  if (t.id === 'rp-save') {
+    try {
+      const data = replayFromEditor(JSON.parse($('#rp-json').value), S.editing.photos);
+      const res = await fetch(`/api/replay-records/${encodeURIComponent(S.editing.data.id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) });
+      const out = await res.json();
+      if (!res.ok) throw new Error((out.problems || [out.error]).join('; '));
+      await refreshState(); const { view, photos } = replayForEditor(out); S.editing = { replay: true, data: view, photos }; renderRecords(); $('#rp-msg').textContent = 'Saved';
+    } catch (err) { $('#rp-msg').textContent = err.message; }
+  }
+  if (t.id === 'rp-del' && confirm('Delete this captured replay? Queries for it will get an acknowledgement only.')) { await api('DELETE', `/api/replay-records/${encodeURIComponent(S.editing.data.id)}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'ed-del') { await api('DELETE', `/api/records/${S.editing.data.id}`); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'reset' && confirm('Replace all records with the seed set?')) { await api('POST', '/api/records-reset'); S.editing = null; await refreshState(); renderRecords(); }
   if (t.id === 'csv-btn') $('#csv-file').click();
@@ -367,7 +424,7 @@ document.addEventListener('change', async (e) => {
 
 async function refreshState() {
   const st = await api('GET', '/api/state');
-  Object.assign(S, { settings: st.settings, regions: st.regions || [], records: st.records, txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
+  Object.assign(S, { settings: st.settings, regions: st.regions || [], records: st.records, replays: await api('GET', '/api/replays'), txns: st.transactions, entityTypes: st.entityTypes, matchKeys: st.matchKeys, config: st.config });
   S.settings.noRecordOnMiss = String(S.settings.noRecordOnMiss) === 'true' || S.settings.noRecordOnMiss === true;
 }
 
