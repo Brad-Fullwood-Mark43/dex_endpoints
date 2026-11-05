@@ -81,8 +81,8 @@ const ymd = (v) => {
  * Does a replay record answer this request? Match rules (docs/REPLAY.md):
  *   OLN       OperatorLicenseNumber equal, ignoring case and leading zeros; State equal (in-state = no State, or the home state)
  *   NAME_DOB  last and first name equal (case-insensitive); middle checked by its first letter only when both sides have one;
- *             BirthDate the same date (YYYYMMDD or MMDDYYYY on either side); SexCode required on both sides and equal (first
- *             letter: M / MALE); State as above
+ *             BirthDate the same date (YYYYMMDD or MMDDYYYY on either side); a record with SexCode needs the request to send
+ *             the same sex (first letter: M / MALE); a record without SexCode matches with or without one; State as above
  *   PLATE     LicensePlateNumber equal (case-insensitive); State equal, or absent / home on either side for an in-state record
  *   VIN       VehicleIdentificationNumber equal (case-insensitive)
  */
@@ -97,7 +97,7 @@ export function matches(record, request, home) {
       if (n.last !== up(m.NameLast) || n.first !== up(m.NameFirst)) return false;
       if (n.middle && m.NameMiddle && n.middle[0] !== up(m.NameMiddle)[0]) return false;
       if (ymd(f.BirthDate) !== ymd(m.BirthDate)) return false;
-      if (!up(f.SexCode) || !up(m.SexCode) || up(f.SexCode)[0] !== up(m.SexCode)[0]) return false;
+      if (up(m.SexCode) && (!up(f.SexCode) || up(f.SexCode)[0] !== up(m.SexCode)[0])) return false;
       return st(f.State) === st(m.State);
     }
     case 'PLATE':
@@ -161,7 +161,6 @@ export function validatePack(pack) {
     if (r.type !== 'replay') problems.push(`record ${i}: type must be "replay"`);
     if (!/^[A-Z]{2}_[A-Za-z0-9_]+$/.test(r.region || '')) problems.push(`record ${i}: region must be a USx provider name`);
     if (!kinds.has(r.match?.kind)) problems.push(`record ${i}: match.kind must be one of ${[...kinds].join(', ')}`);
-    if (r.match?.kind === 'NAME_DOB' && !/^[MFU]/i.test(String(r.match.SexCode ?? '').trim())) problems.push(`record ${i}: a NAME_DOB record needs match.SexCode (M, F or U)`);
     if (!Array.isArray(r.replies) || !r.replies.length) problems.push(`record ${i}: no replies`);
     (r.replies || []).forEach((x, j) => { if (!/^\s*<Response[\s>]/.test(x.response || '')) problems.push(`record ${i} reply ${j}: response must be a <Response> element`); });
   });
@@ -191,7 +190,7 @@ export function catalogText(replays, region) {
   const extra = (r) => `${r.replies.length} repl${r.replies.length === 1 ? 'y' : 'ies'}${replayHasHit(r) ? '  HIT' : ''}`;
   const kinds = [
     ['OLN', 'PERSON BY DRIVER LICENSE', (m) => `OLN ${up(m.OperatorLicenseNumber)}  ${where(m.State)}`],
-    ['NAME_DOB', 'PERSON BY NAME / DOB', (m) => `${up(m.NameLast)}, ${up(m.NameFirst)}${m.NameMiddle ? ' ' + up(m.NameMiddle) : ''}  DOB ${mdy(m.BirthDate)}  Sex ${up(m.SexCode) || '(none: cannot match)'}  ${where(m.State)}`],
+    ['NAME_DOB', 'PERSON BY NAME / DOB', (m) => `${up(m.NameLast)}, ${up(m.NameFirst)}${m.NameMiddle ? ' ' + up(m.NameMiddle) : ''}  DOB ${mdy(m.BirthDate)}  Sex ${up(m.SexCode) || 'any or blank'}  ${where(m.State)}`],
     ['PLATE', 'VEHICLE BY PLATE', (m) => `Plate ${up(m.LicensePlateNumber)}  ${where(m.State)}`],
     ['VIN', 'VEHICLE BY VIN', (m) => `VIN ${up(m.VehicleIdentificationNumber)}`],
   ];

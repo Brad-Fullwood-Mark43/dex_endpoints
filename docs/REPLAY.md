@@ -32,8 +32,8 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
     leading 0); `State` equal, where in-state means no `<State>` (the agent sends none for in-state queries) or the home state.
   - `NAME_DOB`: `Name` (`LAST, FIRST M`) or `NameLast`/`NameFirst`; last and first equal; middle compared by initial only when
     both have one; `BirthDate` the same date, in either order (`YYYYMMDD` or `MMDDYYYY`, with or without `-`; TX_TLETS requests send
-    `MMDDYYYY`, packs store `YYYYMMDD`); `SexCode` required in the request and the record and equal (first letter); a pack's NAME_DOB record without
-    `SexCode` is rejected; `State` as above.
+    `MMDDYYYY`, packs store `YYYYMMDD`); `SexCode`: a record with one needs the request to send the same sex (first letter); a record without one
+    matches with or without a sex in the request; `State` as above.
   - `PLATE`: `LicensePlateNumber` equal (case-insensitive); `State` as above. Plate year and type are not matched.
   - `VIN`: `VehicleIdentificationNumber` equal.
   When several records match, the one with the most replies (then the most full envelopes) wins.
