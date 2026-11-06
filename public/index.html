@@ -136,13 +136,14 @@ function outcome(t) {
 }
 
 const FRIENDLY = { PERSON: 'Person', VEHICLE: 'Vehicle', FIREARM: 'Firearm', BOAT: 'Boat', ARTICLE: 'Article' };
-const QUERY_KEYS = ['Name', 'OperatorLicenseNumber', 'LicensePlateNumber', 'VehicleIdentificationNumber', 'GunSerialNumber', 'BoatHullIdNumber', 'RegistrationNumber', 'ArticleSerialNumber', 'SocialSecurityNumber', 'BirthDate'];
+const QUERY_KEYS = ['Name', 'OperatorLicenseNumber', 'LicensePlateNumber', 'VehicleIdentificationNumber', 'GunSerialNumber', 'BoatHullIdNumber', 'RegistrationNumber', 'ArticleSerialNumber', 'SocialSecurityNumber', 'BirthDate', 'SexCode', 'State'];
 function querySummary(t) {
   if (t.origin === 'receiver') return t.results.length ? `Callback: ${t.results.map((r) => r.class || 'result').join(', ')} for ${[...new Set(t.results.map((r) => r.requestId))].join(', ')}` : 'Callback received (no results in body)';
   if (!t.queries.length) return 'Unparseable request';
   return t.queries.map((q) => {
     const bits = QUERY_KEYS.filter((k) => q.fields[k]).map((k) => q.fields[k]);
-    return `${FRIENDLY[q.entityType] || q.messageType || 'Query'}: ${bits.join(' / ') || '(no identifiers)'}`;
+    const who = [q.auth?.userName && `user ${q.auth.userName}`, (q.auth?.deviceId || q.auth?.deviceAlias) && `device ${q.auth.deviceId || q.auth.deviceAlias}`].filter(Boolean).join(', ');
+    return `${FRIENDLY[q.entityType] || q.messageType || 'Query'}: ${bits.join(' / ') || '(no identifiers)'}${who ? `  (${who})` : ''}`;
   }).join('  |  ');
 }
 

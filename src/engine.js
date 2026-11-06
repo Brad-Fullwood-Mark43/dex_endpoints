@@ -309,7 +309,7 @@ export function recordReplay({ loggedBody, request, region, regionReason, replay
     headers: {},
     sent: clip(maskCredentials(loggedBody)),
     requestXml: clip(maskCredentials(loggedBody)),
-    queries: [{ transactionId: request.id, requestId: request.id, entityType: replay?.entityType ?? null, messageType: request.messageType, auth: {}, fields: {} }],
+    queries: [{ transactionId: request.id, requestId: request.id, entityType: replay?.entityType ?? null, messageType: request.messageType, auth: request.auth ?? {}, fields: request.params ?? {} }],
     ack: { httpStatus: 200, contentType: 'application/xml', body: '(ACK frame)' },
     results: (replay?.replies ?? []).map((r) => {
       const tag = (t) => (new RegExp(`<${t}>([^<]*)</${t}>`).exec(r.response) || [])[1] ?? '';

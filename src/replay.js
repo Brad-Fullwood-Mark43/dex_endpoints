@@ -19,10 +19,17 @@ export function readRequest(xml) {
   if (!req) return null;
   const r = req[1];
   const auth = (/<Authentication>([\s\S]*?)<\/Authentication>/.exec(s) || [])[1] || '';
+  const session = (/<Session>([\s\S]*?)<\/Session>/.exec(s) || [])[1] || '';
+  // Every simple element of the Request, for the call log (the inquiry's parameters as sent)
+  const params = {};
+  for (const m of r.matchAll(/<(\w+)>([^<]*)<\/\1>/g)) if (m[1] !== 'Id' && params[m[1]] === undefined) params[m[1]] = m[2].trim();
   return {
     id: leaf(r, 'Id'),
     messageType: leaf(r, 'MessageType'),
     ori: leaf(auth, 'ORI'),
+    params,
+    // Who and what sent it, for the call log. Password and Mnemonic are never read.
+    auth: { userName: leaf(auth, 'UserName'), deviceId: leaf(auth, 'DeviceId') || leaf(session.replace(/<Authentication>[\s\S]*?<\/Authentication>/, ''), 'Id'), deviceAlias: leaf(auth, 'DeviceAlias'), ori: leaf(auth, 'ORI') },
     fields: {
       OperatorLicenseNumber: leaf(r, 'OperatorLicenseNumber'),
       Name: leaf(r, 'Name'), NameLast: leaf(r, 'NameLast'), NameFirst: leaf(r, 'NameFirst'), NameMiddle: leaf(r, 'NameMiddle'),

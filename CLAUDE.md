@@ -19,6 +19,8 @@ Most work in this repo is **adjusting the responses** so they look like what a r
 3. **Never log request or result contents.** The gateway, delivery steps and the TCP listener log counts, ids, entity types and status
    only. Credentials in request bodies (Password, UserName, ORI, SSN, Mnemonic...) are masked by `src/mask.js` before they reach the call
    log or database. Keep it that way (CJIS-style rule: no PII/CJI in logs, even synthetic, so the habit never slips).
+   The call log shows each inquiry's parameters and the sending user name, device and ORI (requested by Gordon, 2026-11-06,
+   so testers can see who searched what); Password and Mnemonic are never read or stored, and the raw request stays masked.
 4. **The gateway fails closed.** `prismatic/gateway-step.cjs` refuses any query whose identifying value is not on
    the allowlist (built from the records) or whose field name is not permitted. Do not loosen that to make a test
    pass; add the record or field deliberately instead.

@@ -181,3 +181,11 @@ test('no match: the catalog goes out headed "no test record matches", logged wit
   assert.deepEqual([c.id, c.entityType, c.noMatch, c.match.kind], ['catalog-xx_test-no-match', 'PERSON', true, 'CATALOG (no match)']);
   assert.match(c.replies[0].response, /NO TEST RECORD MATCHES THIS QUERY/);
 });
+
+test('readRequest gives the call log every inquiry parameter plus user and device, never the password', () => {
+  const xml = '<LawEnforcementTransaction version="1.0"><Session><Id>TESTDEV1</Id><Authentication><UserName>TESTUSER</UserName><ORI>XX1000001</ORI><Password>NOTLOGGED</Password><Mnemonic>NOTLOGGED</Mnemonic></Authentication></Session><Transaction><Request><Id>01ABC_PERSON</Id><MessageType>DriverLicenseQuery</MessageType><State>XX</State><Name>SAMPLE, ALEX</Name><BirthDate>06301985</BirthDate><SexCode>M</SexCode></Request></Transaction></LawEnforcementTransaction>';
+  const r = readRequest(xml);
+  assert.deepEqual(r.params, { MessageType: 'DriverLicenseQuery', State: 'XX', Name: 'SAMPLE, ALEX', BirthDate: '06301985', SexCode: 'M' });
+  assert.deepEqual(r.auth, { userName: 'TESTUSER', deviceId: 'TESTDEV1', deviceAlias: null, ori: 'XX1000001' });
+  assert.doesNotMatch(JSON.stringify(r), /NOTLOGGED/);
+});
