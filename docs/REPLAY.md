@@ -46,6 +46,13 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
   The agent doesn't read it.
 - **Failure modes** (`ackMode`, `resultMode`) don't apply to replayed regions; captured behaviour is what you get.
 
+## Simulation label
+
+Every reply sent to a user's query (captured replays, the query catalog, and the generated results unmapped ORIs get) has
+`*** USx SIMULATION ***` as the first line of each `MessageData` (`src/label.js`). Universal Search shows `MessageData` as
+plain text, so colour or bold is not possible through a reply; a red banner is left to the USx/DEx Parsing view. Status
+(heartbeat) frames and ACKs are not labelled.
+
 ## Query catalog (plate X1X1)
 
 A vehicle plate query for `X1X1` (any state, case and spaces ignored) from a device whose ORI maps to a region (see

@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { labelText } from './label.js';
 
 export const NS_API = 'http://schema.commsys.com/xml/ConnectCic/Api';
 export const NS_SOAP = 'http://schema.commsys.com/xml/ConnectCic/Api/Soap';
@@ -162,7 +163,7 @@ export function buildResultXml({ deviceId, transactionId, requestId, auth = {}, 
     IntInterfaceName: result.interfaceName ?? 'MOCK_INTERFACE',
     IntSystemName: result.systemName ?? result.system ?? '',
     IntTransId: randomCode(4),
-    MessageData: result.messageData ?? '',
+    MessageData: labelText(result.messageData), // "*** USx SIMULATION ***" on top (src/label.js)
     MessageType: result.messageType ?? result.responseType ?? '',
     QueryState: result.queryState ?? '',
     ResponseType: result.responseType ?? result.messageType ?? '',

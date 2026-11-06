@@ -3,6 +3,8 @@
 // captured <Response> sent back as it was, in order and with its captured spacing, with only the request id swapped.
 // See docs/REPLAY.md. Pure functions, no I/O, so they are easy to test (test/replay.test.js).
 
+import { labelResponseXml } from './label.js';
+
 const up = (v) => String(v ?? '').trim().toUpperCase();
 const noLeadingZeros = (v) => (/^\d+$/.test(v) ? v.replace(/^0+(?=\d)/, '') : v);
 const leaf = (xml, tag) => { const m = new RegExp(`<(?:\\w+:)?${tag}>([^<]*)</(?:\\w+:)?${tag}>`).exec(xml); return m ? m[1].trim() : null; };
@@ -138,6 +140,7 @@ export function replayFrames(record, requestId) {
         `<Request>${/<Id>[^<]*<\/Id>/.test(inner) ? inner.replace(/<Id>[^<]*<\/Id>/, `<Id>${id}</Id>`) : `${inner}<Id>${id}</Id>`}</Request>`);
     } else resp = resp.replace(/^<Response>/, `<Response><Request><Id>${id}</Id></Request>`);
     if (r.attachedImage && !/<ImageData>/.test(resp)) resp = resp.replace(/<\/Response>\s*$/, `<Image><ImageData>${r.attachedImage}</ImageData></Image></Response>`);
+    resp = labelResponseXml(resp); // "*** USx SIMULATION ***" on top of every MessageData (src/label.js)
     const delayMs = Math.max(0, (r.offsetMs ?? 0) - prev);
     prev = r.offsetMs ?? prev;
     return { delayMs, xml: `<?xml version="1.0"?>\n<LawEnforcementTransaction version="1.0"><Transaction>${resp}</Transaction></LawEnforcementTransaction>\n` };
