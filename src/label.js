@@ -9,9 +9,10 @@ export function labelText(text) {
   return s.startsWith(SIM_LABEL) ? s : s ? `${SIM_LABEL}\n${s}` : SIM_LABEL;
 }
 
-/** Labels every <MessageData> in a reply's XML (a reply can hold several <Response> elements); adds one where a
- * Response has none. The text inside is already XML-escaped and the label has no characters that need escaping. */
+/** Labels every <MessageData> in a reply's XML (a reply can hold several <Response> elements). A Response without one
+ * is left exactly as captured: the photo response that comes before a record's data response (ResponseType Image,
+ * <Image><ImageData>) has no MessageData, and adding one made it look like a text reply (2026-11-09, Railway photo
+ * replies). The text inside is already XML-escaped and the label has no characters that need escaping. */
 export function labelResponseXml(xml) {
-  const s = String(xml ?? '').replace(/<MessageData>([\s\S]*?)<\/MessageData>|<MessageData\s*\/>/g, (_m, inner) => `<MessageData>${labelText(inner ?? '')}</MessageData>`);
-  return s.replace(/<Response>((?:(?!<\/Response>)[\s\S])*?)<\/Response>/g, (m, inner) => (/<MessageData>/.test(inner) ? m : `<Response>${inner}<MessageData>${SIM_LABEL}</MessageData></Response>`));
+  return String(xml ?? '').replace(/<MessageData>([\s\S]*?)<\/MessageData>|<MessageData\s*\/>/g, (_m, inner) => `<MessageData>${labelText(inner ?? '')}</MessageData>`);
 }

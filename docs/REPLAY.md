@@ -51,7 +51,8 @@ TCP request -> readRequest() -> device ORI -> settings.regionByOri -> region
 Every reply sent to a user's query (captured replays, the query catalog, and the generated results unmapped ORIs get) has
 `*** USx SIMULATION ***` as the first line of each `MessageData` (`src/label.js`). Universal Search shows `MessageData` as
 plain text, so colour or bold is not possible through a reply; a red banner is left to the USx/DEx Parsing view. Status
-(heartbeat) frames and ACKs are not labelled.
+(heartbeat) frames and ACKs are not labelled, and a Response with no `MessageData` (the photo response, `ResponseType` Image,
+that comes before a record's data response) is sent exactly as captured: no `MessageData` is added to it.
 
 ## Query catalog (plate X1X1)
 
