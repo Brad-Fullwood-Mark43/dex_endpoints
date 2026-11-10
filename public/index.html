@@ -30,9 +30,9 @@
   main { padding: 16px 24px 64px; max-width: 1500px; margin: 0 auto; }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
   .p-green { background: var(--green-bg); color: var(--green); } .p-red { background: var(--red-bg); color: var(--red); }
-  .p-amber { background: var(--amber-bg); color: var(--amber); } .p-blue { background: var(--blue-bg); color: var(--blue-text); }
+  .p-amber { background: var(--amber-bg); color: var(--amber); } .p-yellow { background: #fef08a; color: #713f12; } .p-blue { background: var(--blue-bg); color: var(--blue-text); }
   .p-grey { background: var(--grey-bg); color: var(--grey-text); }
-  @media (prefers-color-scheme: dark) { .p-red { color: #fecaca; } }
+  @media (prefers-color-scheme: dark) { .p-red { color: #fecaca; } .p-yellow { background: #854d0e; color: #fef08a; } }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { background: none; border: 1px solid currentColor; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
   #render-modal { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 50; display: flex; align-items: center; justify-content: center; }
@@ -334,6 +334,22 @@ const replayLabel = (m) => m.kind === 'NAME_DOB' ? `${m.NameLast}, ${m.NameFirst
 const KIND = { OLN: 'OLN', NAME_DOB: 'Name/DOB', PLATE: 'Plate', VIN: 'VIN' };
 const regionReplays = (region) => S.replays.filter((r) => r.region === region);
 const sourcesOf = (r) => [...new Set((r.sources || []).filter(Boolean))];
+// Search values whose format matters when typing them in USx: punctuation or an inner space inside a name part, OLN,
+// plate or VIN (SMITH-JONES, O'BRIEN, D123-4567-8901). Called out in yellow (HIT is red) so testers type them as shown.
+const FORMAT_FIELDS = [['NameLast', 'last name'], ['NameFirst', 'first name'], ['NameMiddle', 'middle name'], ['OperatorLicenseNumber', 'OLN'], ['LicensePlateNumber', 'plate'], ['VehicleIdentificationNumber', 'VIN']];
+const MARK = { '-': 'HYPHEN', "'": 'APOSTROPHE', '.': 'PERIOD', ' ': 'SPACE', '/': 'SLASH' };
+function formatMarks(m) {
+  const marks = new Set(), where = [];
+  for (const [k, label] of FORMAT_FIELDS) {
+    const v = String(m[k] ?? '').trim();
+    const found = [...new Set(v.match(/[^A-Za-z0-9]/g) || [])];
+    if (!found.length) continue;
+    found.forEach((c) => marks.add(MARK[c] || 'PUNCTUATION'));
+    where.push(`${label} ${v}`);
+  }
+  return { marks: [...marks], where };
+}
+const formatPill = (m) => { const f = formatMarks(m); return f.marks.length ? `<span class="pill p-yellow" title="Type exactly as shown: ${esc(f.where.join('; '))}. The replies carry the value in this format.">FORMAT: ${f.marks.join(', ')}</span>` : ''; };
 function renderReplayRegion(region) {
   const all = regionReplays(region);
   const oris = Object.entries(S.settings.regionByOri || {}).filter(([, v]) => v === region).map(([k]) => (k.length === 2 ? `any ${k}… ORI` : k)).join(' or ');
@@ -346,7 +362,7 @@ function renderReplayRegion(region) {
   const sources = [...new Set(all.flatMap(sourcesOf))].sort();
   const count = (p) => all.filter(p).length;
   return `<div class="muted" style="margin-bottom:8px">Captured from a real CommSys and ${esc(region)} switch, scrubbed, photos blurred. Devices with ORI ${esc(oris || '(none mapped: set regionByOri)')} are answered only from these.</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="pill p-blue">${all.length} queries</span><span class="pill p-red">${count((r) => r.hit)} HIT</span><span class="pill p-grey">${all.reduce((n, r) => n + r.replies, 0)} replies</span><span class="pill p-grey">${count((r) => r.photos)} with photo</span>${count((r) => r.edited) ? `<span class="pill p-amber">${count((r) => r.edited)} edited</span>` : ''}${count((r) => r.fullEnvelope !== r.replies) ? `<span class="pill p-amber">${count((r) => r.fullEnvelope !== r.replies)} not full envelope</span>` : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="pill p-blue">${all.length} queries</span><span class="pill p-red">${count((r) => r.hit)} HIT</span>${count((r) => formatMarks(r.match).marks.length) ? `<span class="pill p-yellow" title="Search values with a hyphen, apostrophe, period, space or slash: type them as shown">${count((r) => formatMarks(r.match).marks.length)} FORMAT</span>` : ''}<span class="pill p-grey">${all.reduce((n, r) => n + r.replies, 0)} replies</span><span class="pill p-grey">${count((r) => r.photos)} with photo</span>${count((r) => r.edited) ? `<span class="pill p-amber">${count((r) => r.edited)} edited</span>` : ''}${count((r) => r.fullEnvelope !== r.replies) ? `<span class="pill p-amber">${count((r) => r.fullEnvelope !== r.replies)} not full envelope</span>` : ''}</div>
       <div class="row" style="margin-bottom:8px;align-items:flex-end">
         <div><label>Query type</label><select id="rf-kind"><option value="">All (${all.length})</option>${kinds.map((k) => `<option value="${k}" ${f.kind === k ? 'selected' : ''}>${KIND[k]} (${count((r) => r.match.kind === k)})</option>`).join('')}</select></div>
         <div><label>Source</label><select id="rf-source"><option value="">All</option>${sources.map((s) => `<option value="${esc(s)}" ${f.source === s ? 'selected' : ''}>${esc(s)} (${count((r) => sourcesOf(r).includes(s))})</option>`).join('')}</select></div>
@@ -368,7 +384,7 @@ function replayRows(region) {
     const env = r.fullEnvelope === r.replies ? '<span class="pill p-green">FULL ENVELOPE</span>' : r.fullEnvelope ? '<span class="pill p-amber">PART ENVELOPE</span>' : '<span class="pill p-amber">TEXT ONLY</span>';
     const st = r.match.State || region.slice(0, 2);
     const open = S.editing && S.editing.replay && S.editing.data.id === r.id;
-    return `<div class="rec rp-row" ${open ? 'style="background:var(--accent)"' : ''}><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted" title="${esc(sourcesOf(r).join(', '))}">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}<span class="rp-actions"><button data-rp-render="${esc(r.id)}" title="Review the replies the way Universal Search would show them (USx Parsing view)">Render</button><button data-rp-edit="${esc(r.id)}" class="${open ? 'primary' : ''}">${open ? 'Close editor' : 'Edit'}</button></span></div>${open ? `<div class="rp-inline">${replayEditor(S.editing)}</div>` : ''}`;
+    return `<div class="rec rp-row" ${open ? 'style="background:var(--accent)"' : ''}><span class="pill p-grey">${esc(KIND[r.match.kind] || r.match.kind)}</span><span class="pill p-grey">${esc(st)}</span>${r.hit ? '<span class="pill p-red" title="A captured reply has Hit/Detected = 1">HIT</span>' : ''}${formatPill(r.match)}<span class="n">${esc(replayLabel(r.match))}</span><span class="muted" title="${esc(sourcesOf(r).join(', '))}">${r.replies} repl${r.replies === 1 ? 'y' : 'ies'}${r.photos ? ' · photo' : ''}</span>${env}${r.edited ? '<span class="pill p-amber">EDITED</span>' : ''}${r.certified ? '' : '<span class="pill p-amber">OFF</span>'}<span class="rp-actions"><button data-rp-render="${esc(r.id)}" title="Review the replies the way Universal Search would show them (USx Parsing view)">Render</button><button data-rp-edit="${esc(r.id)}" class="${open ? 'primary' : ''}">${open ? 'Close editor' : 'Edit'}</button></span></div>${open ? `<div class="rp-inline">${replayEditor(S.editing)}</div>` : ''}`;
   }).join('');
 }
 function replayForEditor(rec) {
